@@ -148,7 +148,7 @@ KCP <- function(
   # import global env variables for parallel computing
   clusterExport(cl, varlist = c("data", "v_hats_comb", "perm_all_fun", "mw_cor_fun",
       "r_vec_fun", "v_hat_fun", "v_hat_par_fun", "gauss_kernal_fun", "jitter_fun",
-      "window", "start", "end"))
+      "window", "start", "end"), envir=environment())
   clusterCall(cl, function() library(tidyverse))
   # run the variance function on raw data
   v_hats_comb$v_hat <- parallel::parLapply(cl, v_hats_comb$data, v_hat_par_fun)
