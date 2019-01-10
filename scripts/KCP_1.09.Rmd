@@ -1,0 +1,112 @@
+---
+title: "Detecting Idiographic Personality Change"
+author: "Emorie D Beck"
+institution: "Washington University in St. Louis"
+date: "`r Sys.setlocale('LC_TIME', 'C'); format(Sys.time(), '%d\\\\. %B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Workspace
+```{r}
+packages <- c("psych", "parallel", "plyr", "tidyverse")
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+library(psych)
+library(parallel)
+library(plyr)
+library(tidyverse)
+wd <- "~/Box/network/other projects/KCP"
+wd <- "~/Dropbox (Brown)/network/other projects/KCP"
+```
+
+## Packages
+
+## Functions
+
+## Data
+
+### Create a codebook
+```{r}
+Big5 <- c("Extraversion", "Agreeableness", "Conscientiousness", "Neuroticism", "Openness")
+codebook <- crossing(
+  inventory = "tipi",
+  traittmp = c("e", "a", "c", "n", "o"),
+  week = c(paste("0",1:9, sep = ""), 10:60)
+) %>%
+  mutate(trait = mapvalues(traittmp, c("e", "a", "c", "n", "o"), Big5),
+         type = "personality") %>%
+  unite(item, inventory, traittmp, week, sep = "") %>%
+full_join(
+crossing(
+  tmp = "relevents",
+  num = c(paste("0", c(3,4,6,8,9), sep = ""), "10", "11")
+) %>%
+  mutate(trait = mapvalues(num, unique(num), c("famPassed", "partTrav", "pregnant", 
+                            "engaged", "moveIn", "married", "brokeUp")),
+         type = "event") %>%
+  unite(item, tmp, num, sep = "")
+)
+```
+
+
+### Load the data
+```{r}
+
+# CREATE A COEBOOK
+weekly <- sprintf("%s/data/Longitudinal Weekly 1 Year/metaresearch2-corrected-web.sav", wd) %>%
+  haven::read_sav()
+
+weekly_long <- weekly %>%
+  select(ID, contains("tipi"), contains("relevents")) %>%
+  gather(key = item, value = value, -ID, na.rm = T) %>%
+  full_join(codebook) %>%
+  mutate(week = as.numeric(str_remove_all(item, "[a-z]"))) %>%
+  select(-item) %>% 
+  filter(value != 0) %>%
+  arrange(ID, trait, type, week) 
+
+weekly_wide <- weekly_long %>% 
+  filter(type == "personality") %>%
+  spread(key = trait, value = value) %>%
+  select(-type)
+```
+
+# KCP 
+```{r}
+source('~/Box/network/other projects/KCP/scripts/functions.R')
+
+KCP_nested <- weekly_wide %>% 
+  group_by(ID) %>%
+  mutate(n = n()) %>%
+  filter(n > 25) %>%
+  select(-n) %>%
+  filter(ID == "002") %>%
+  nest() %>%
+  mutate(KCP = map2(data, ID, ~possibly(KCP(
+    data = .        # N x P numeric matrix or data frame
+  , kmax = 3        # max number of change points to test
+  , window = 10     # the size of the moving window used for correlations
+  , timevar = "week"# name of the time variable for sorting
+  , iter = 100      # number of permutations
+  , alpha = .05     # "significance criterion"
+  , rule = "OR"     # should both variance and variance drop tests be required to be significant
+  , perm_data = sprintf("%s/results/perm_data", wd) # path to save the permuted data sets and moving window correlations to
+  , vhat_data = sprintf("%s/results/vhats", wd) # path to save the v hat values, if desired
+  , ID = .y  
+  ), NA_real_)))
+```
+

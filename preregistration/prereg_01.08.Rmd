@@ -1,0 +1,265 @@
+---
+title           : "Detecting Idiographic Personality Change"
+shorttitle      : "Detecting Idiographic Personality Change"
+date            : "`r Sys.setlocale('LC_TIME', 'C'); format(Sys.time(), '%d\\\\. %B %Y')`"
+
+author: 
+  - name        : Emorie D Beck
+    affiliation : 1
+  - name        : Joshua J Jackson
+    affiliation : 1
+
+affiliation:
+  - id          : 1
+    institution : Washington University in St. Louis
+
+output: prereg::cos_prereg
+---
+
+# Study Information
+
+## Title
+<!-- Provide the working title of your study. It may be the same title that you submit for publication of your final manuscript, but it is not a requirement. -->
+
+`r rmarkdown::metadata$title`
+
+
+## Research questions
+<!-- Please list each research question included in this study. -->
+
+1. Can we detect individual-level changes in multivariate time series?  
+2. What proportion of individuals show idiographic change over the course of 1 year?
+2. Does change correspond to self-reported life events?  
+
+
+## Hypotheses
+<!-- For each of the research questions listed in the previous section, provide one or multiple specific and testable hypotheses. Please state if the hypotheses are directional or non-directional. If directional, state the direction. A predicted effect is also appropriate here. Providing a short name for each hypothesis (e.g. H1, H2, etc.) will later allow you to easily relate your hypotheses to statistical tests in your analysis plan. -->
+
+A small proportion of individuals will show change points over the course of the year.
+Among those that do, an above chance proportion will have change points that correspond to a life event.
+
+
+
+# Sampling Plan
+<!-- Please describe how you plan to collect samples, as well as the number of samples you plan to collect and your rationale for this decision. Keep in mind that the data described in this section should be the actual data used for analysis, so if you are using a subset of a larger dataset, please describe the subset that will actually be used in your study. -->
+
+Data in this study come from Fraley NSF 0443783 longitudinal study and were collected in 2004-2005. The study used online web assessments of undergraduates in romantic relationships to assess attachment, personality, and relationship variables over different time periods. In the proposed study below, we will use the sample who responded to one survey per week for one year.  
+
+## Existing data
+<!-- Preregistration is designed to make clear the distinction between confirmatory tests, specified prior to seeing the data, and exploratory analyses conducted after observing the data. Therefore, creating a research plan in which existing data will be used presents unique challenges. Please select the description that best describes your situation. Please do not hesitate to contact the Center for Open Science if you have questions about how to answer this questions (prereg@cos.io). -->
+
+**Registration prior to analysis of the data**. 
+
+The second author helped to collect the data, and the first author accessed the data two years ago for an unrelated project. No analyses were performed.
+
+## Explanation of existing data
+<!-- If you indicate that you will be using some data that already exist in this study, please describe the steps you have taken to assure that you are unaware of any patterns or summary statistics in the data. This may include an explanation of how access to the data has been limited, who has observed the data, or how you have avoided observing any analysis of the specific data you will use in your study. The purpose of this question is to assure that the line between confirmatory and exploratory analysis is clear. -->
+
+Because the project involves coding of a permutation-based approach for which no R packages or functions currently exist, we had to create these. All code and scripts were written using simulated data to keep the authors blind.
+
+
+## Data collection procedures
+<!-- Please describe the process by which you will collect your data. If you are using human subjects, this should include the population from which you obtain subjects, recruitment efforts, payment for participation, how subjects will be selected for eligibility from the initial pool (e.g. inclusion and exclusion rules), and your study timeline. For studies that don't include human subjects, include information about how you will collect samples, duration of data gathering efforts, source or location of samples, or batch numbers you will use. -->
+
+Participants were 400 undergraduates involved in romantic relationships and collected at the Univeristiy of Illinois, Urbana-Champagne. Participants completed weekly surveys over the course of one year. Participants were offered $150 in compensation for their time.
+
+
+## Sample size
+<!-- Describe the sample size of your study. How many units will be analyzed in the study? This could be the number of people, birds, classrooms, plots, interactions, or countries included. If the units are not individuals, then describe the size requirements for each unit. If you are using a clustered or multilevel design, how many units are you collecting at each level of the analysis? -->
+
+N = 400 participants completed weekly surveys over the course of one year. All units with at least 25 observatins will be included in this study.
+
+
+## Sample size rationale
+<!-- This could include a power analysis or an arbitrary constraint such as time, money, or personnel. -->
+
+Data were pre-collected, so the total sample size is constrained by the number of participants recruited in the intial study.
+
+
+## Stopping rule
+<!-- If your data collection procedures do not give you full control over your exact sample size, specify how you will decide when to terminate your data collection. -->
+
+The original planned sample was 400 participants, which also acted as the stopping rule.
+
+
+
+# Variables
+<!-- In this section you can describe all variables (both manipulated and measured variables) that will later be used in your confirmatory analysis plan. In your analysis plan, you will have the opportunity to describe how each variable will be used. If you have variables which you are measuring for exploratory analyses, you are not required to list them, though you are permitted to do so. -->
+
+Each week, data on attachment style in different relationship contexts, the Big 5 (the TIPI), relationship satisfaction, and relationship / life events were collected. In addition, each wave included one of the five following surveys at random:  depressive symptoms (CESD), ECR-R attachment, Big Five personality traits (BFI), attachment features and funtions (WHOTO), physical health symptoms (PILL).  
+
+
+## Manipulated variables
+<!-- Describe all variables you plan to manipulate and the levels or treatment arms of each variable. For observational studies and meta-analyses, simply state that this is not applicable. -->
+
+There are no manipulated variables.
+
+
+## Measured variables
+<!-- Describe each variable that you will measure. This will include outcome measures, as well as any predictors or covariates that you will measure. You do not need to include any variables that you plan on collecting if they are not going to be included in the confirmatory analyses of this study. -->
+
+The Ten Item Personality Scale:
+1. Extraverted, enthusiastic. (E)  
+2. Critical, quarrelsome. (A) (-)  
+3. Dependable, self-disciplined. (C)  
+4. Anxious, easily upset. (N)  
+5. Open to new experiences, complex. (O)  
+6. Reserved, quiet. (E) (-)  
+7. Sympathetic, warm. (A)  
+8. Disorganized, careless. (C) (-)  
+9. Calm, emotionally stable. (N) (-)  
+10. Conventional, uncreative. (O) (-)  
+
+Life / Relationship Events:
+\begin{itemize}
+  \item relevents03 = 'someone in my family passed away';
+	\item relevents04 = 'my partner and I were separated this week due to travel';
+	\item relevents06 = 'we found out we were pregnant';
+	\item relevents08 = 'my partner and I got engaged';
+	\item relevents09 = 'my partner and I moved in together';
+	\item relevents10 = 'my partner and I got married';
+	\item relevents11 = 'my partner and I broke up';
+\end{itemize}
+
+
+## Indices
+<!-- If any measurements are  going to be combined into an index (or even a mean), what measures will you use and how will they be combined? Include either a formula or a precise description of your method. If your are using a more complicated statistical method to combine measures (e.g. a factor analysis), you can note that here but describe the exact method in the analysis plan section. -->
+
+We will use Big 5 composite traits. Items will be composited at each measurement point for each person for each trait. Items noted above with "(-)" will be reverse coded.
+
+We will create a variable that indexes whether participants experienced any of the events above and which week they occurred. If sample size allows, we will test both this broader composite and specific life events.  
+
+
+# Design Plan
+<!-- In this section, you will be asked to describe the overall design of your study. Remember that this research plan is designed to register a single study, so if you have multiple experimental designs, please complete a separate preregistration. -->
+
+
+## Study type
+
+
+**Observational Study**. Data is collected from study subjects that are not randomly assigned to a treatment. This includes surveys, natural experiments, and regression discontinuity designs.
+
+
+## Blinding
+<!-- Blinding describes who is aware of the experimental manipulations within a study. Mark all that apply. -->
+
+No blinding is involved in this study.
+
+## Study design
+<!-- Describe your study design. Examples include two-group, factorial, randomized block, and repeated measures. Is it a between (unpaired), within-subject (paired), or mixed design? Describe any counterbalancing required. Typical study designs for observation studies include cohort, cross sectional, and case-control studies. -->
+
+This is a longitudinal study in which participants were asked to complete surveys once a week for one year.  
+
+
+## Randomization
+<!-- If you are doing a randomized study, how will you randomize, and at what level? -->
+
+Participants received randomy received one of five surveys each week, in addition to the normal questions
+
+# Analysis Plan
+<!-- You may describe one or more confirmatory analysis in this section. Remember, all analyses specified in this section must be reported in the final article, and any additional analyses must be clearly labeled as exploratory or hypothesis generating in the final paper. A confirmatory analysis plan must state up front which variables are predictors (independent) and which are the outcomes (dependent), otherwise it is an exploratory analysis.
+
+You may describe exploratory analyses in this section, but a clear confirmatory analysis is required. An exploratory test is any test where a prediction is not made up front, or there are multiple possible tests that you are going to use. A statistically significant finding in an exploratory test is a great way to form a new confirmatory hypothesis, which could be registered at a later time.
+
+To help you keep track of multiple analyses, you may label each for your reference. -->
+
+Analyses will be based a permutation-based kernal change point analysis for detecting correlational changes in multivariate time series (Cabrieto, Tuerlinckx, Kuppens, Hunyadi, \& Ceulemans, 2018). 
+
+The kernal change point project involves using moving-window correlations across the raw time series as well as shuffled permutations of the time series. We will use a window size of 10 and run 1000 permutations. Because the algorithm searches for the optimal number of change points, we will not specify this advance but will constrain the maximum number of change points to three, as this seems to the authors to be the maximum number of plausible changes over one year of weekly assessments.
+
+Variance Test: tests whether the variance in moving window correlation similarity across observation within a window exceeds chance variability in permutations (shuffles) of the data set. This indicates whether there are any change points in the data. If there are, the variance in moving window correlations should be greater in the raw data than in the permuted data sets.
+
+Variance Drop Test: Because the KCP solution by construction improves with more change points (because variance will be decreased when window sizes are smaller and more homogeneous), the variance drop test tests whether the drop in variance by adding an additional change point in the raw data exceeds the drop in variance in the permuted data sets in at least 97.5\% of cases.
+
+Steps: 
+1. Calculate moving window correlations.  
+2. Calculate Gaussian similarity of correlations within all possible combinations of windows.  
+3. Repeat steps 1 and 2 for 1000 permutations of the raw data.  
+4. Perform the Variance test using the Gaussian similarity when K = 0.  
+5. Perform the Variance drop test using the max drop in average Variance of Gaussian similarity ($\hat{R}$).  
+6. Make a conclusion on whether there is a change point using a combination of 4 and 5.  
+
+## Statistical models
+<!-- What statistical model(s) will you use to test your hypothesis(ses)? Please include the type of model (e.g. ANOVA, regression, SEM, etc.) as well as the specification of the model (this includes all variables that will be included as predictors, outcomes, or covariates). Refer to the *Hypotheses* section to relate each hypothesis to a statistical analysis. Please specify any interactions that will be tested and remember that any test not included here must be labeled as an exploratory test in your final article. -->
+
+Gaussian Similarity Measure: 
+$$Gk(\mathbf{R}_i, \mathbf{R}_j) = exp \Big(\frac{-||\mathbf{R}_i - \mathbf{R}_j||^2}{2h^2_R}\Big) $$
+where, 
+$h_R$ is obtained by computing the median Euclidean distances between all $R_i$’s.
+
+Calculating variance within a window:
+$$\hat{V}_{p, \tau_1,\tau_2,...,\tau_K} = (\tau_p - \tau_{p-1}) - \frac{1}{\tau_p - \tau_{p-1}} \sum_{i=\tau_{p-1}+1}^{\tau_p} \sum_{j=\tau_{p-1}+1}^{\tau_p} Gk(\mathbf{R}_i, \mathbf{R}_j) $$
+
+Calculating average variance within a window:
+$$\hat{R}(\tau_1,\tau_2,...,\tau_K) = \frac{1}{n}\sum_{p=1}^{K+1}\hat{V}_p, \tau_1,\tau_2,...,\tau_K$$ 
+Choosing the Change Points
+$$\tau_1,\tau_2,...,\tau_K = arg~min~\hat{R}(\tau_1,\tau_2,...,\tau_K) = arg~min \frac{1}{n}\sum_{p=1}^{K+1}\hat{V}_p, \tau_1,\tau_2,...,\tau_K$$
+
+Calculating the Variance Test:  
+$$P_{variancetest} = \frac{\#(\hat{R}_{min, K=0} > \hat{R}_{min,K=0,perm})}{B} $$
+
+Calculating the Variance Drop Test:
+
+$$P_{variancedroptest} = \frac{\#(max~variance~drop_{perm} > max~variance~drop)}{B} $$
+where $max~variance~drop = \hat{R}_{min, K} - \hat{R}_{min, K-1}$ 
+
+## Transformations
+<!-- If you plan on transforming, centering, recoding the data, or will require a coding scheme for categorical variables, please describe that process. -->
+
+Items noted above with a "(-)" will be reverse coded.  
+
+
+## Follow-up analyses
+<!-- If not specified previously, will you be conducting any confirmatory analyses to follow up on effects in your statistical model, such as subgroup analyses, pairwise or complex contrasts, or follow-up tests from interactions. Refer to the *Hypotheses* section to relate each hypothesis to a statistical analysis. Remember that any analyses not specified in this research plan must be noted as exploratory. -->
+
+
+## Inference criteria
+<!-- What criteria will you use to make inferences? Please describe the information you'll use (e.g. p-values, Bayes factors, specific model fit indices), as well as cut-off criterion, where appropriate. Will you be using one or two tailed tests for each of your analyses? If you are comparing multiple conditions or testing multiple hypotheses, will you account for this? -->
+
+We are using a permutation based approach that involves two tests (the variance drop test and the variance test). As such, we will use a Bonferroni correction ($\frac{\alpha}{2}$), such that the raw observed value should be greater than 97.5\% of the permuted values (variance and variance drop).
+
+
+## Data exclusion
+<!-- How will you determine what data or samples, if any, to exclude from your analyses? How will outliers be handled? -->
+
+Participants with fewer than 25 responses will be excluded because of inadequate power to detect change.  
+
+
+## Missing data
+<!-- How will you deal with incomplete or missing data? -->
+
+Missing data will left as missing to prevent correlating across uneven time windows. 
+
+
+## Exploratory analyses (optional)
+<!-- If you plan to explore your data set to look for unexpected differences or relationships, you may describe those tests here. An exploratory test is any test where a prediction is not made up front, or there are multiple possible tests that you are going to use. A statistically significant finding in an exploratory test is a great way to form a new confirmatory hypothesis, which could be registered at a later time. -->
+
+As a follow up, we will test whether identified change points coincide with life event experiences. 
+
+It is possible that only a small subset of the population will show reliable change points. Of those that do, it is likely that only a subset will report one of the 7 life events we collected. Of those that do, we will report the proportion of individuals whose life event experiences fall +/- 2 weeks from the empirically derived change points.
+
+
+## Analysis scripts (optional)
+<!-- The purpose of a fully commented analysis script is to unambiguously provide the responses to all of the questions raised in the analysis section. This step is not common, but we encourage you to try creating an analysis script, refine it using a modeled dataset, and use it in place of your written analysis plan.
+
+Upload an analysis script with clear comments. This optional step is helpful in order to create a process that is completely transparent and increase the likelihood that your analysis can be replicated. We recommend that you run the code on a simulated dataset in order to check that it will run without errors. -->
+
+Attached with this preregistration is an R script with a series of functions written to succinctly run the KCP permutation procedure given a data frame of multivariate time series data.
+
+
+# Other
+
+## Other (Optional)
+<!-- If there is any additional information that you feel needs to be included in your preregistration, please enter it here. -->
+
+
+
+# References
+Cabrieto, J., Tuerlinckx, F., Kuppens, P., Hunyadi, B., \& Ceulemans, E. (2018). Testing for the presence of correlation changes in a multivariate time series: A permutation based approach. \textbf{Scientific reports, 8}(1), 769.
+
+## 
+\vspace{-2pc}
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{-1in}
+\setlength{\parskip}{8pt}
+\noindent

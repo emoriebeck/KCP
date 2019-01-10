@@ -1,0 +1,406 @@
+---
+title: "Fraley NSF Data"
+author: "Emorie D Beck"
+date: "10/18/2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Workspace
+##Packages
+```{r}
+library(haven)
+library(ggplot2)
+library(qgraph)
+library(mlVAR)
+library(graphicalVAR)
+library(bootnet)
+library(NetworkComparisonTest)
+library(knitr)
+library(plyr)
+library(dplyr)
+library(gridExtra)
+library(tidyr)
+library(Rmisc)
+library(psych)
+library(lme4)
+```
+
+#Sample 1: Daily Diaries
+##Load Data
+```{r}
+daily <- haven::read_sav("~/Box/network/Fraley NSF/Longitudinal 30 Days/meta30days-corrected-web.sav")
+
+daily_long <- data.frame(ID = rep(unique(daily$ID), each = 30),
+                        day = rep(1:30, times = length(unique(daily$ID))))
+
+for (i in c(paste("tipi", c("n", "e", "o", "a", "c"), sep = ""), "involved")){
+  data <- daily %>%
+    dplyr::select(starts_with("ID"), starts_with(i)) %>%
+    gather(key = day, value = measure, -ID) %>%
+    mutate(day = as.numeric(gsub(i,"",day))) 
+  colnames(data)[3] <- i
+  daily_long <- right_join(daily_long, data)
+}
+
+cols <- colnames(daily_long)
+colnames(daily_long)[3:7] <- c("n", "e", "o", "a", "c")
+
+daily_long <- daily_long[order(daily_long$ID, daily_long$day),]
+```
+
+```{r}
+source("~/Box/network/PAIRS/mlVAR_testing.R")
+fit1 <- 
+  mlVAR_test(daily_long, 
+             vars = colnames(daily_long)[3:7], #4:16
+             idvar = "ID", 
+             lags = 1,
+             #dayvar = "day", 
+             beepvar = "day",
+             temporal = "orthogonal", 
+             verbose = TRUE,
+             scale = FALSE)
+
+sum_fit1 <- summary(fit1)
+```
+
+```{r}
+library(png)
+bird <- "~/Box Sync/network/PAIRS/Brown Bag Presentation 3.31/bird.png"
+plot <- 
+plot(fit1, 
+     "temporal", 
+     #title = "Raw Estimated temporal relationships", 
+     layout = "spring", 
+     # groups = list(Neuroticism = 1,
+     #               Extraversion = 2,
+     #               Openness = 3,
+     #               Agreeableness = 4, 
+     #               Conscientiousness = 5),
+     #shape = "square",
+     cut = .015,
+     label.color = "white",
+     mar = rep(5,4),
+     #subject = 002,
+     label.font = 2,
+     nonsig = 'hide',
+     curve = -1,
+     #legend.cex = .3,
+     legend = FALSE,
+     #borders = FALSE,
+     border.color = "black",
+     border.width = 3,
+     #repulsion = .5,
+     node.width = 1.5,
+     edge.width = 2, 
+     label.cex = 2, 
+     edge.color = "black",
+     labels = F,
+     #images = bird,
+     color = c("blue","yellow","mediumseagreen", "orange", "orchid4"),
+     label.fill.vertical = 1,
+     label.fill.horizontal = 1)
+
+plot2 <- 
+plot(fit1, 
+     "contemporaneous", 
+     #title = "Raw Estimated temporal relationships", 
+     layout = "spring", 
+     # groups = list(Neuroticism = 1,
+     #               Extraversion = 2,
+     #               Openness = 3,
+     #               Agreeableness = 4, 
+     #               Conscientiousness = 5),
+     #shape = "square",
+     cut = .015,
+     label.color = "white",
+     mar = rep(5,4),
+     #subject = 002,
+     label.font = 2,
+     nonsig = 'hide',
+     curve = -1,
+     #legend.cex = .3,
+     legend = FALSE,
+     #borders = FALSE,
+     border.color = "black",
+     border.width = 3,
+     #repulsion = .5,
+     node.width = 1.5,
+     edge.width = .5, 
+     label.cex = 2, 
+     labels = F,
+     edge.color = "black",
+     #images = bird,
+     color = c("blue","yellow","mediumseagreen", "orange", "orchid4"),
+     label.fill.vertical = 1,
+     label.fill.horizontal = 1)
+
+plot <- qgraph(select(sum_fit1$contemporaneous, v1, v2, pcor), directed = F, layout = "spring", 
+       # groups = list(Neuroticism = 1,
+       #               Extraversion = 2,
+       #               Openness = 3,
+       #               Agreeableness = 4, 
+       #               Conscientiousness = 5),
+       #shape = "square",
+       cut = .015,
+       label.color = "white",
+       mar = rep(5,4),
+       #subject = 002,
+       label.font = 2,
+       nonsig = 'hide',
+       curve = -1,
+       threshold = .11,
+       #legend.cex = .3,
+       legend = FALSE,
+       repulsion = .2,
+       #borders = FALSE,
+       border.color = "black",
+       border.width = 3,
+       #repulsion = .5,
+       node.width = 1.5,
+       edge.width = .5, 
+       label.cex = 2, 
+       labels = F,
+       edge.color = "black",
+       #images = bird,
+       color = c("blue","yellow","mediumseagreen", "orange", "orchid4"),
+       label.fill.vertical = 1,
+       label.fill.horizontal = 1)
+
+plot$graphAttributes$Edges$lty[plot$Edgelist$weight < 0] <- 2
+plot2$graphAttributes$Edges$lty[plot2$Edgelist$weight < 0] <- 2
+plot$graphAttributes$Nodes$label.color[plot$graphAttributes$Nodes$color == "yellow"] <- "black"
+plot2$graphAttributes$Nodes$label.color[plot2$graphAttributes$Nodes$color == "yellow"] <- "black"
+#plot$graphAttributes$Nodes$labels <- c("N", "E", "O", "A", "C")
+#plot2$graphAttributes$Nodes$labels <- c("N", "E", "O", "A", "C")
+plot$graphAttributes$Nodes$labels <- rep("", 5)
+plot2$graphAttributes$Nodes$labels <- rep("", 5)
+# plot$graphAttributes$Edges$color <-
+#   ifelse(plot$Edgelist$weight <.02, "thistle3",
+#   ifelse(plot$Edgelist$weight <.04, "mediumorchid", "midnightblue"))
+plot(plot)
+plot(plot2)
+
+unique(daily_long$ID)
+
+sub_plot_fun <- function(x){
+  plot2 <- 
+plot(fit1, 
+     "contemporaneous", 
+     #title = "Raw Estimated temporal relationships", 
+     layout = "spring", 
+     groups = list(Neuroticism = 1,
+                   Extraversion = 2,
+                   Openness = 3,
+                   Agreeableness = 4, 
+                   Conscientiousness = 5),
+     subject = x,
+     #shape = "square",
+     cut = .015,
+     label.color = "white",
+     mar = rep(5,4),
+     #subject = 002,
+     label.font = 2,
+     threshold = .075,
+     nonsig = 'hide',
+     curve = -1,
+     #legend.cex = .3,
+     legend = FALSE,
+     #repulsion = .5,
+     node.width = 1.5,
+     #edge.width = 2, 
+     labels = F,
+     label.cex = 2, 
+     edge.color = "black",
+     label.fill.vertical = 1,
+     label.fill.horizontal = 1,
+     gray = F,
+     color = c("blue","yellow","mediumseagreen", "orange", "orchid4"),
+     DoNotPlot = T)
+
+plot2$graphAttributes$Edges$lty[plot2$Edgelist$weight < 0] <- 2
+plot2$graphAttributes$Nodes$label.color[plot2$graphAttributes$Nodes$color == "yellow"] <- "black"
+#plot2$graphAttributes$Nodes$labels <- c("N", "E", "O", "A", "C")
+plot2$graphAttributes$Nodes$labels <- rep("", 5)
+# plot$graphAttributes$Edges$color <-
+#   ifelse(plot$Edgelist$weight <.02, "thistle3",
+#   ifelse(plot$Edgelist$weight <.04, "mediumorchid", "midnightblue"))
+plot(plot2)
+}
+
+sub_plot_fun <- function(x){
+  df <- kappa_long0 %>%
+    filter(SID == x, wave == 1, fit == "personality") %>%
+    select(Var1, Var2, value)
+  plot2 <- 
+qgraph(df, 
+     directed = F,
+     #title = "Raw Estimated temporal relationships", 
+     layout = "circle", 
+     groups = list(Neuroticism = 7:9,
+                   Extraversion = c(5,6),
+                   Agreeableness = c(1,2),
+                   Conscientiousness = c(3,4)),
+     #shape = "square",
+     cut = .015,
+     label.color = "white",
+     fade = F,
+     mar = rep(5,4),
+     #subject = 002,
+     label.font = 2,
+     #threshold = .075,
+     nonsig = 'hide',
+     curve = -1,
+     #legend.cex = .3,
+     legend = FALSE,
+     #repulsion = .5,
+     node.width = 1.5,
+     #edge.width = 2, 
+     labels = F,
+     label.cex = 2, 
+     edge.color = "black",
+     label.fill.vertical = 1,
+     label.fill.horizontal = 1,
+     gray = F,
+     color = c("blue","yellow", "orange", "orchid4"),
+     DoNotPlot = T)
+
+plot2$graphAttributes$Edges$lty[plot2$Edgelist$weight < 0] <- 2
+plot2$graphAttributes$Nodes$label.color[plot2$graphAttributes$Nodes$color == "yellow"] <- "black"
+#plot2$graphAttributes$Nodes$labels <- c("N", "E", "O", "A", "C")
+plot2$graphAttributes$Nodes$labels <- rep("", 9)
+# plot$graphAttributes$Edges$color <-
+#   ifelse(plot$Edgelist$weight <.02, "thistle3",
+#   ifelse(plot$Edgelist$weight <.04, "mediumorchid", "midnightblue"))
+plot(plot2)
+}
+
+library(animation)
+#set up function to loop through the draw.a.plot() function
+loop.animate <- function() {
+  lapply(gVAR_fit$SID[1:20], function(i) {
+    sub_plot_fun(i)
+  })
+}
+
+saveGIF(loop.animate(), interval = .5, movie.name="circle_networks.gif", ani.width = 800, ani.height = 800)
+
+```
+
+#Sample 2: Weekly Diaries
+##Load Data
+```{r}
+weekly <- haven::read_sav("~/Box/network/Fraley NSF/Longitudinal Weekly 1 Year/metaresearch2-corrected-web.sav")
+
+weekly_long <- data.frame(ID = rep(unique(weekly$ID), each = 60),
+                        week = rep(1:60, times = length(unique(weekly$ID))))
+
+for (i in c(paste("tipi", c("n", "e", "o", "a", "c"), sep = ""), "involved", "relevents01")){
+  data <- weekly %>%
+    dplyr::select(starts_with("ID"), starts_with(i)) %>%
+    gather(key = week, value = measure, -ID) %>%
+    mutate(week = as.numeric(gsub(i,"", week))) #%>%
+    #filter(measure != 0)
+  colnames(data)[3] <- i
+  weekly_long <- right_join(weekly_long, data)
+}
+
+weekly_long <- weekly_long[order(weekly_long$ID, weekly_long$week),]
+
+# identify which participants broke up with a partner during the study
+weekly_long %>%
+  group_by(ID, involved) %>%
+  summarize(n = n())
+  
+```
+
+```{r}
+source("~/Box Sync/network/PAIRS/mlVAR_testing.R")
+fit1_week <- 
+  mlVAR_test(weekly_long, 
+             vars = colnames(weekly_long)[3:8], #4:16
+             idvar = "ID", 
+             lags = 1,
+             #dayvar = "day", 
+             beepvar = "week",
+             temporal = "orthogonal", 
+             verbose = TRUE,
+             scale = FALSE)
+
+fit2_week_inv <- 
+  mlVAR_test(subset(weekly_long, involved == 1), 
+             vars = colnames(weekly_long)[3:7], #4:16
+             idvar = "ID", 
+             lags = 1,
+             #dayvar = "day", 
+             beepvar = "week",
+             temporal = "orthogonal", 
+             verbose = TRUE,
+             scale = FALSE)
+
+fit2_week_bu <- 
+  mlVAR_test(subset(weekly_long, involved == 2), 
+             vars = colnames(weekly_long)[3:7], #4:16
+             idvar = "ID", 
+             lags = 1,
+             #dayvar = "day", 
+             beepvar = "week",
+             temporal = "orthogonal", 
+             verbose = TRUE,
+             scale = FALSE)
+```
+
+```{r}
+plot(fit1_week, 
+     "temporal", 
+     #title = "Raw Estimated temporal relationships", 
+     layout = "spring", 
+     groups = list(Neuroticism = 1,
+                   Extraversion = 2,
+                   Openness = 3,
+                   Agreeableness = 4, 
+                   Conscientiousness = 5,
+                   Breakup = 6),
+     shape = "square",
+     cut = .015,
+     label.color = "white",
+     label.font = 2,
+     nonsig = 'hide',
+     curve = -1,
+     #legend.cex = .3,
+     legend = TRUE,
+     #repulsion = .5,
+     node.width = 1.4,
+     edge.width = 2, 
+     label.cex = 6, 
+     label.fill.vertical = 1,
+     label.fill.horizontal = 1,
+     #gray = T,#),
+     color = c("gray15", "gray30", "gray45", "gray50", "gray75"))
+```
+
+
+
+
+```{r}
+weekly %>% select(contains("bfi"))
+  select(ID, starts_with("tipi")) %>%
+  gather(key = item, value = value, -ID, na.rm = T) %>%
+  separate(item, c("trait", "week"), -2) %>%
+  separate(trait, c("inventory", "trait"), -1) %>%
+  spread(key = trait, value = value)
+  
+weekly %>%
+  select(ID, contains("volv")) %>%
+  gather(week, involved, -ID) %>%
+  mutate(week = as.numeric(str_remove_all(week, "involved"))) %>% 
+  group_by(ID, involved) %>%
+  summarize(n = n()) %>%
+  group_by(involved) %>%
+  summarize(N = n())
+```
+
