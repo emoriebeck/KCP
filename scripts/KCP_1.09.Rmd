@@ -25,12 +25,15 @@ packages <- c("psych", "parallel", "plyr", "tidyverse")
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 
+if(!("results" %in% list.files())){dir.create("~/results")}
+
 library(psych)
 library(parallel)
 library(plyr)
 library(tidyverse)
 wd <- "~/Box/network/other projects/KCP"
-wd <- "~/Dropbox (Brown)/network/other projects/KCP"
+read.path <- "https://github.com/emoriebeck/KCP"
+write.path <- "~/"
 ```
 
 ## Packages
@@ -65,9 +68,8 @@ crossing(
 
 ### Load the data
 ```{r}
-
 # CREATE A COEBOOK
-weekly <- sprintf("%s/data/Longitudinal Weekly 1 Year/metaresearch2-corrected-web.sav", wd) %>%
+weekly <- url(sprintf("%s/blob/master/data/Longitudinal_Weekly_1_Year/metaresearch2-corrected-web.sav?raw=true", read.path)) %>%
   haven::read_sav()
 
 weekly_long <- weekly %>%
@@ -87,7 +89,7 @@ weekly_wide <- weekly_long %>%
 
 # KCP 
 ```{r}
-source('~/Box/network/other projects/KCP/scripts/functions.R')
+source(sprintf('%s/blob/master/scripts/functions.R?raw=true', read.path))
 
 KCP_nested <- weekly_wide %>% 
   group_by(ID) %>%
@@ -104,8 +106,8 @@ KCP_nested <- weekly_wide %>%
   , iter = 100      # number of permutations
   , alpha = .05     # "significance criterion"
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
-  , perm_data = sprintf("%s/results/perm_data", wd) # path to save the permuted data sets and moving window correlations to
-  , vhat_data = sprintf("%s/results/vhats", wd) # path to save the v hat values, if desired
+  , perm_data = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
+  , vhat_data = sprintf("%s/results/vhats", write.path) # path to save the v hat values, if desired
   , ID = .y  
   ), NA_real_)))
 ```
