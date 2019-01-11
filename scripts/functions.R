@@ -22,8 +22,8 @@ KCP <- function(
   , iter = 1000     # number of permutations
   , alpha = .05     # "significance criterion"
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
-  , perm_data = NULL# path to save the permuted data sets and moving window correlations to
-  , vhat_data = NULL# path to save the v hat values, if desired
+  , perm_path = NULL# path to save the permuted data sets and moving window correlations to
+  , vhat_path = NULL# path to save the v hat values, if desired
   , ID = NULL       # option participant ID if saving data to an output file
 ){
   # make sure required packages are loaded
@@ -176,7 +176,7 @@ KCP <- function(
     mutate(data = map(v_hat, ~.$data),
            mw_cor = map(v_hat, ~.$mw_cor)) %>%
     select(-v_hat)
-  if(!is.null(perm_data)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_data, ID))}
+  if(!is.null(perm_data)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
   
   # get rid of permuted data sets to save memory
   v_hats_comb_perm <- v_hats_comb_perm %>% 
@@ -196,7 +196,7 @@ KCP <- function(
     full_join(v_hats %>% mutate(scrap = 1)) %>%
     select(-scrap)
   
-  if(!is.null(vhat_data)){save(v_hats_comb, v_hats_comb_perm, file = sprintf("%s/vhats_%s.Rdata", vhat_data, ID))}
+  if(!is.null(vhat_data)){save(v_hats_comb, v_hats_comb_perm, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
   
   # calculate the r_hat values (average within-phase variance)
   r_hats <- v_hats_comb %>%
