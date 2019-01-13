@@ -99,12 +99,12 @@ KCP_nested <- weekly_wide %>%
   select(-n) %>%
   filter(ID %in% c("002", "003", "004")) %>%
   nest() %>%
-  mutate(KCP = map2(data, ID, KCP(
-    data = .        # N x P numeric matrix or data frame
+  mutate(KCP = map2(data, ID, ~KCP(
+    data = .x       # N x P numeric matrix or data frame
   , kmax = 3        # max number of change points to test
   , window = 10     # the size of the moving window used for correlations
   , timevar = "week"# name of the time variable for sorting
-  , iter = 50      # number of permutations
+  , iter = 50       # number of permutations
   , alpha = .05     # "significance criterion"
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
   , perm_path = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
@@ -113,8 +113,6 @@ KCP_nested <- weekly_wide %>%
   )))
 end <- Sys.time()
 print(paste("Time elapsed", round(end-start,2)))
-
-KCP_nested$KCP
 
 
 ```
