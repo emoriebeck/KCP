@@ -31,9 +31,10 @@ library(psych)
 library(parallel)
 library(plyr)
 library(tidyverse)
-wd <- "~/Box/network/other projects/KCP"
+wd <- "~/Documents/Github/KCP"
 read.path <- "https://github.com/emoriebeck/KCP"
 write.path <- "~/"
+write.path <- wd
 ```
 
 ## Packages
@@ -90,25 +91,31 @@ weekly_wide <- weekly_long %>%
 # KCP 
 ```{r}
 source(sprintf('%s/blob/master/scripts/functions.R?raw=true', read.path))
-
+start <- Sys.time()
 KCP_nested <- weekly_wide %>% 
   group_by(ID) %>%
   mutate(n = n()) %>%
   filter(n > 25) %>%
   select(-n) %>%
-  filter(ID == "002") %>%
+  filter(ID %in% c("002", "003", "004")) %>%
   nest() %>%
-  mutate(KCP = map2(data, ID, ~possibly(KCP(
+  mutate(KCP = map2(data, ID, KCP(
     data = .        # N x P numeric matrix or data frame
   , kmax = 3        # max number of change points to test
   , window = 10     # the size of the moving window used for correlations
   , timevar = "week"# name of the time variable for sorting
-  , iter = 100      # number of permutations
+  , iter = 50      # number of permutations
   , alpha = .05     # "significance criterion"
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
-  , perm_data = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
-  , vhat_data = sprintf("%s/results/vhats", write.path) # path to save the v hat values, if desired
+  , perm_path = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
+  , vhat_path = sprintf("%s/results/vhats", write.path) # path to save the v hat values, if desired
   , ID = .y  
-  ), NA_real_)))
+  )))
+end <- Sys.time()
+print(paste("Time elapsed", round(end-start,2)))
+
+KCP_nested$KCP
+
+
 ```
 

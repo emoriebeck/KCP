@@ -140,7 +140,7 @@ KCP <- function(
   }
   
   # Calculate the number of cores
-  no_cores <- detectCores() #- 2
+  no_cores <- detectCores() - 1
   
   # Initiate cluster
   cl <- makeCluster(no_cores)
@@ -176,7 +176,7 @@ KCP <- function(
     mutate(data = map(v_hat, ~.$data),
            mw_cor = map(v_hat, ~.$mw_cor)) %>%
     select(-v_hat)
-  if(!is.null(perm_data)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
+  if(!is.null(perm_path)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
   
   # get rid of permuted data sets to save memory
   v_hats_comb_perm <- v_hats_comb_perm %>% 
@@ -192,11 +192,13 @@ KCP <- function(
     select(-data) %>%
     full_join(v_hats_comb %>% select(rn, tau_p, tau_p_min_1)) %>%
     select(-rn) %>%
+    distinct() %>%
     mutate(scrap = 1) %>%
     full_join(v_hats %>% mutate(scrap = 1)) %>%
-    select(-scrap)
+    select(-scrap) %>%
+    arrange(k, comb, sample)
   
-  if(!is.null(vhat_data)){save(v_hats_comb, v_hats_comb_perm, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
+  if(!is.null(vhat_path)){save(v_hats_comb, v_hats_comb_perm, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
   
   # calculate the r_hat values (average within-phase variance)
   r_hats <- v_hats_comb %>%
@@ -216,7 +218,7 @@ KCP <- function(
   # where B is the number of permutations
   v_test <- sum((r_hats_perm %>% filter(k == 0))$rhat > (r_hats %>% filter(k == 0))$rhat, na.rm = T) / iter
   
-  if(v_test < .05){print("k > 0")} else {print("No change points")}
+  if(v_test < .025){print("k > 0")} else {print("No change points")}
   
   # variance drop test
   v_drop_raw <- r_hats %>% 
@@ -233,14 +235,22 @@ KCP <- function(
   # now for each combo of k, match the permutated with the raw drops
   v_drop <- v_drop_perm %>%
     group_by(k, comb) %>%
-    summarize(total = sum(min > raw_min, na.rm = T))
+    summarize(p = sum(min > raw_min, na.rm = T)/iter)
+  
+  if(any(v_drop$p < .025)){print("Change Points detected")} else {print("No Change Points")}
+  
+  cp <- ifelse((v_test < .025 | any(v_drop$p < .-25)), "CP")
   
   out = list(
     v_drop = v_drop
     , v_test = v_test
     , r_hats = r_hats
     , r_hats_perm = r_hats_perm
+    , v_test = v_test
+    , v_drop = v_drop
+    , cp = cp
   )
+  return(out)
 }
 
 ### mw_cor_fun ###
