@@ -104,7 +104,7 @@ KCP_nested <- weekly_wide %>%
   , kmax = 3        # max number of change points to test
   , window = 10     # the size of the moving window used for correlations
   , timevar = "week"# name of the time variable for sorting
-  , iter = 50       # number of permutations
+  , iter = 5       # number of permutations
   , alpha = .05     # "significance criterion"
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
   , perm_path = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
@@ -114,6 +114,30 @@ KCP_nested <- weekly_wide %>%
 end <- Sys.time()
 print(paste("Time elapsed", round(end-start,2)))
 
+
+KCP_nested <- KCP_nested %>%
+  mutate(
+    v_test = map_dbl(KCP, ~.$v_test)
+    , v_drop = map(KCP, ~.$v_drop)
+    , cp = map_chr(KCP, ~.$cp)
+  )
+
+KCP_nested %>%
+  group_by(cp) %>%
+  summarize(n = n())
+
+KCP_nested %>%
+  filter(cp == "CP") %>%
+  select(-v_test, -cp) %>%
+  unnest(v_drop) %>% 
+  filter(k > 0) %>%
+  group_by(ID) %>%
+  filter(p == min(p, na.rm = T))
+
+(KCP_nested %>%
+  filter(cp == "CP"))$KCP[[1]]$r_hats_perm
+(KCP_nested %>%
+  filter(cp == "CP"))$KCP[[1]]$r_hats
 
 ```
 

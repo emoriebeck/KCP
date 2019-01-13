@@ -218,28 +218,35 @@ KCP <- function(
   # where B is the number of permutations
   v_test <- sum((r_hats_perm %>% filter(k == 0))$rhat > (r_hats %>% filter(k == 0))$rhat, na.rm = T) / iter
   
-  if(v_test < .025){print("k > 0")} else {print("No change points")}
+  if(v_test < .025){print("V_test: k > 0")} else {print("V_test: No change points")}
   
   # variance drop test
   v_drop_raw <- r_hats %>% 
-    group_by(k, comb) %>%
-    summarize(raw_min = min(rhat, na.rm = T))
+    group_by(k) %>%
+    summarize(raw_min = min(rhat, na.rm = T)) %>%
+    ungroup() %>%
+    mutate(raw_min_1 = lag(raw_min),
+           raw_drop = raw_min - raw_min_1)
   
   v_drop_perm <- r_hats_perm %>%
     filter(!is.na(sample)) %>%
-    group_by(sample, k, comb) %>%
+    group_by(sample, k) %>%
     summarize(min = min(rhat, na.rm = T)) %>%
+    group_by(sample) %>%
+    mutate(min_1 = lag(min),
+           drop = min - min_1) %>%
     ungroup() %>%
-    full_join(v_drop_raw)
+    full_join(v_drop_raw) 
   
   # now for each combo of k, match the permutated with the raw drops
   v_drop <- v_drop_perm %>%
-    group_by(k, comb) %>%
-    summarize(p = sum(min > raw_min, na.rm = T)/iter)
+    filter(k != 0) %>%
+    group_by(k) %>%
+    summarize(p = sum(max(drop, na.rm = T) > max(raw_drop, na.rm = T), na.rm = T)/iter)
   
-  if(any(v_drop$p < .025)){print("Change Points detected")} else {print("No Change Points")}
+  if(any(v_drop$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
   
-  cp <- ifelse((v_test < .025 | any(v_drop$p < .-25)), "CP")
+  cp <- ifelse((v_test < .025 | any(v_drop$p < .025)), "CP", "NCP")
   
   out = list(
     v_drop = v_drop
