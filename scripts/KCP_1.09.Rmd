@@ -312,3 +312,67 @@ saveGIF(loop.animate(), interval = .25, movie.name="mwr_series.gif", ani.width =
 
 ```
 
+## Within-Phase Variance
+```{r}
+mw_cor %>%
+  mutate(xmin = 25, xmax = 35, ymin = -1, ymax = 1) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "khaki1", alpha = .5, color = "white") +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+ggsave(sprintf("%s/results/pres_figs/mwr_series_ex.png", write.path),
+       width = 8, height = 5)
+
+
+
+tau_p <- 35
+tau_p_min_1 <- 25
+R <- mw_cor %>% group_by(i) %>% select(-tmp) %>% nest()
+inner <- crossing(inner_l = (tau_p_min_1+1):tau_p,
+                    outer_l = (tau_p_min_1+1):tau_p) %>%
+    filter(inner_l != outer_l & inner_l < outer_l) %>%
+    left_join(R %>% dplyr::select(inner_l = i, R_i = data)) %>%
+    left_join(R %>% dplyr::select(outer_l = i, R_j = data)) %>%
+    mutate(inner = map2_dbl(R_i, R_j, possibly(gauss_kernal_fun, NA_real_)))
+
+gausssim_short_plot_fun <- function(R_i, R_j, G_k){
+  mw_cor %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+      scale_y_continuous(limits = c(-1.1,1.1), breaks = seq(-1,1,1)) +
+      scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+      # geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      #   fill = "khaki1", alpha = .5, color = "white") +
+      geom_line() + 
+      geom_point(data = . %>% filter(i == R_i), size = 4) +
+      geom_point(data = . %>% filter(i == R_j), size = 4) +
+      geom_text(data = . %>% filter(i == R_i), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      geom_text(data = . %>% filter(i == R_j), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      annotate("text", x = 55, y = 1, label = round(G_k,1)) + 
+      labs(x = "Week", y = "Moving window Correlation") +
+      facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+      theme_classic() + 
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+            axis.text = element_text(face = "bold"),
+            axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(1:nrow(inner), function(i){
+    gausssim_short_plot_fun(inner$inner_l[i], inner$outer_l[i], inner$inner[i])
+})
+}
+
+saveGIF(loop.animate(), interval = .1, movie.name="gaussim_series_short.gif", ani.width = 800, ani.height = 500)
+```
+
+
