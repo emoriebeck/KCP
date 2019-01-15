@@ -223,31 +223,48 @@ KCP <- function(
   # variance drop test
   v_drop_raw <- r_hats %>% 
     group_by(k) %>%
-    summarize(raw_min = min(rhat, na.rm = T)) %>%
+    mutate(mincomb = comb[rhat == min(rhat, na.rm = T)]) %>%
+    filter(comb == mincomb) %>%
+    # summarize(raw_min = min(rhat, na.rm = T)) %>%
     ungroup() %>%
-    mutate(raw_min_1 = lag(raw_min),
-           raw_drop = raw_min - raw_min_1)
+    mutate(raw_min_1 = lag(rhat),
+           raw_drop = rhat - raw_min_1) %>%
+    rename(raw_min = rhat)
   
   v_drop_perm <- r_hats_perm %>%
     filter(!is.na(sample)) %>%
     group_by(sample, k) %>%
-    summarize(min = min(rhat, na.rm = T)) %>%
+    mutate(mincomb = comb[rhat == min(rhat, na.rm = T)]) %>%
+    filter(comb == mincomb) %>%
     group_by(sample) %>%
-    mutate(min_1 = lag(min),
-           drop = min - min_1) %>%
+    mutate(min_1 = lag(rhat),
+           drop = rhat - min_1) %>%
     ungroup() %>%
-    full_join(v_drop_raw) 
+    rename(min = rhat)
+  
+  v_drop <- v_drop_perm %>%
+    select(sample, k, min, min_1, drop) %>%
+    full_join(v_drop_raw %>% select(-comb, -mincomb)) 
   
   # now for each combo of k, match the permutated with the raw drops
-  v_drop <- v_drop_perm %>%
+  v_drop_test <- v_drop %>%
     filter(k != 0) %>%
     group_by(sample) %>%
-    summarize(max_drop = max(drop, na.rm = T),
-              max_raw_drop = max(raw_drop, na.rm = T)) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T),
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>%
     ungroup() %>%
     summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter)
   
   if(any(v_drop$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
+  
+  k <- NA
+  knots <- NA
+  if(v_drop$p < .025 | v_test$p < .025){
+    tmp <- v_drop_raw %>% filter(abs(raw_drop) == max(abs(raw_drop), na.rm = T))
+    k <- tmp$k
+    knots <- (v_hats %>% filter(k == tmp$k & comb == tmp$comb))$tau_p_min_1 + 1
+  
+  }
   
   cp <- ifelse((v_test < .025 | any(v_drop$p < .025)), "CP", "NCP")
   
@@ -256,7 +273,9 @@ KCP <- function(
     , v_test = v_test
     , r_hats = r_hats
     , r_hats_perm = r_hats_perm
-    , cp = cp
+    , cp = cp,
+    , knots = knots
+    , k = k
   )
   return(out)
 }
