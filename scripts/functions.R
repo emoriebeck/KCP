@@ -242,9 +242,10 @@ KCP <- function(
   v_drop <- v_drop_perm %>%
     filter(k != 0) %>%
     group_by(sample) %>%
-    # summarize(max_drop = max(drop, na.rm = T),
-    #           max_raw_drop = max(raw_drop, na.rm = T))
-    summarize(p = sum(max(drop, na.rm = T) > max(raw_drop, na.rm = T), na.rm = T)/iter)
+    summarize(max_drop = max(drop, na.rm = T),
+              max_raw_drop = max(raw_drop, na.rm = T)) %>%
+    ungroup() %>%
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter)
   
   if(any(v_drop$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
   
