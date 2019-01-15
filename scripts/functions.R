@@ -73,45 +73,45 @@ KCP <- function(
   } 
   if(kmax >= 2){
     v_hats <-
-          crossing(
-            k = 2,  # k = 2 means 2 change points
-            i = start,# setting last phase of initial phase to the median of the first time point
-            a = (start + 1):(end), # set change point to all possible locations between the beginning and end of the series
-            b = (a + 1):(end) # set change point to all possible locations between a and end of the series
-          ) %>%
-        filter((a > i) & (b > a)) %>% # last obs of current phase must be larger than last obs of last phase
-        mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
-        gather(key = tau, value = v, -k, -comb) %>% # change to long
-        group_by(comb) %>% # group by phases
-        mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
-        ungroup() %>%
-        mutate(tau_p = ifelse(tau == "b", end, lead - 1), # tau_p is the last obs of current phase
-               tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
-        select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
-        full_join(v_hats) # join with previous v_hat combinations for fewer phases
-    } 
+      crossing(
+        k = 2,  # k = 2 means 2 change points
+        i = start,# setting last phase of initial phase to the median of the first time point
+        a = (start + 1):(end), # set change point to all possible locations between the beginning and end of the series
+        b = (a + 1):(end) # set change point to all possible locations between a and end of the series
+      ) %>%
+      filter((a > i) & (b > a)) %>% # last obs of current phase must be larger than last obs of last phase
+      mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
+      gather(key = tau, value = v, -k, -comb) %>% # change to long
+      group_by(comb) %>% # group by phases
+      mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
+      ungroup() %>%
+      mutate(tau_p = ifelse(tau == "b", end, lead - 1), # tau_p is the last obs of current phase
+             tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
+      select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
+      full_join(v_hats) # join with previous v_hat combinations for fewer phases
+  } 
   if (kmax == 3) {
-      v_hats <- 
-        crossing(
-          k = 3, # k = 3 means 3 change points
-          i = start,# setting last phase of initial phase to the median of the first time point
-          a = (start + 1):(end),  # set change point to all possible locations between the beginning and end of the series
-          b = (a + 1):(end), # set change point to all possible locations between a and end of the series
-          c = (b + 1):end  # set change point to all possible locations between b and end of the series
-        ) %>%
-        filter((a > i) & (b > a) & (c > b)) %>% # last obs of current phase must be larger than last obs of last phase
-        mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
-        gather(key = tau, value = v, -k, -comb) %>% # change to long
-        group_by(comb) %>% # group by phases
-        mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
-        ungroup() %>%
-        mutate(tau_p = ifelse(tau == "c", end, lead - 1), # tau_p is the last obs of current phase
-               tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
-        select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
-        full_join(v_hats) # join with previous v_hat combinations for fewer phases
-    } 
+    v_hats <- 
+      crossing(
+        k = 3, # k = 3 means 3 change points
+        i = start,# setting last phase of initial phase to the median of the first time point
+        a = (start + 1):(end),  # set change point to all possible locations between the beginning and end of the series
+        b = (a + 1):(end), # set change point to all possible locations between a and end of the series
+        c = (b + 1):end  # set change point to all possible locations between b and end of the series
+      ) %>%
+      filter((a > i) & (b > a) & (c > b)) %>% # last obs of current phase must be larger than last obs of last phase
+      mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
+      gather(key = tau, value = v, -k, -comb) %>% # change to long
+      group_by(comb) %>% # group by phases
+      mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
+      ungroup() %>%
+      mutate(tau_p = ifelse(tau == "c", end, lead - 1), # tau_p is the last obs of current phase
+             tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
+      select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
+      full_join(v_hats) # join with previous v_hat combinations for fewer phases
+  } 
   if (kmax > 3) {
-      stop ("these are psychological time series and > 3 CP's isn't likely plausible")
+    stop ("these are psychological time series and > 3 CP's isn't likely plausible")
   }
   
   # real data
@@ -147,8 +147,8 @@ KCP <- function(
   
   # import global env variables for parallel computing
   clusterExport(cl, varlist = c("data", "v_hats_comb", "perm_all_fun", "mw_cor_fun",
-      "r_vec_fun", "v_hat_fun", "v_hat_par_fun", "gauss_kernal_fun", "jitter_fun",
-      "window", "start", "end"), envir=environment())
+                                "r_vec_fun", "v_hat_fun", "v_hat_par_fun", "gauss_kernal_fun", "jitter_fun",
+                                "window", "start", "end"), envir=environment())
   clusterCall(cl, function() library(tidyverse))
   # run the variance function on raw data
   v_hats_comb$v_hat <- parallel::parLapply(cl, v_hats_comb$data, v_hat_par_fun)
@@ -156,7 +156,7 @@ KCP <- function(
   # run the variance function on permuted sets
   v_hats_comb_perm <- tibble(sample = 1:iter)
   v_hats_comb_perm$v_hat <- parLapply(cl, 1:iter,
-          function(x) perm_all_fun(data, window, start, end))
+                                      function(x) perm_all_fun(data, window, start, end))
   # v_hats_comb_perm$v_hat <- lapply(1:iter,
   #           function(x) perm_all_fun(data, window, start, end))
   
@@ -241,7 +241,9 @@ KCP <- function(
   # now for each combo of k, match the permutated with the raw drops
   v_drop <- v_drop_perm %>%
     filter(k != 0) %>%
-    group_by(k) %>%
+    group_by(sample) %>%
+    # summarize(max_drop = max(drop, na.rm = T),
+    #           max_raw_drop = max(raw_drop, na.rm = T))
     summarize(p = sum(max(drop, na.rm = T) > max(raw_drop, na.rm = T), na.rm = T)/iter)
   
   if(any(v_drop$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
@@ -253,8 +255,6 @@ KCP <- function(
     , v_test = v_test
     , r_hats = r_hats
     , r_hats_perm = r_hats_perm
-    , v_test = v_test
-    , v_drop = v_drop
     , cp = cp
   )
   return(out)
@@ -289,7 +289,7 @@ r_vec_fun <- function(
   data # N x P data matrix of raw or shuffled data
   , median # starting point of window
   , window # window size
-  ) {
+) {
   # setup 
   start <- median - (window %/% 2)
   data <- data[start:(start+window-1),] # keep only data in window
@@ -363,12 +363,12 @@ v_hat_fun <- function(
   
   print(paste(tau_p, tau_p_min_1, sep = " "))
   inner <- crossing(inner_l = (tau_p_min_1+1):tau_p,
-           outer_l = (tau_p_min_1+1):tau_p) %>%
+                    outer_l = (tau_p_min_1+1):tau_p) %>%
     filter(inner_l != outer_l & inner_l < outer_l) %>%
     left_join(R %>% dplyr::select(inner_l = i, R_i = data)) %>%
     left_join(R %>% dplyr::select(outer_l = i, R_j = data)) %>%
     mutate(inner = map2_dbl(R_i, R_j, possibly(gauss_kernal_fun, NA_real_)))
- 
+  
   inner_sum <- sum(inner$inner, na.rm = T) # sum inner loop
   res <- (tau_p - tau_p_min_1) - (outer * inner_sum) # multiply outer by inner loop sum
 }
