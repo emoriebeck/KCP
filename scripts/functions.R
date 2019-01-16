@@ -399,3 +399,25 @@ jitter_fun <- function(df){
   colnames(df2) <- colnames(df2)
   return(df2)
 }
+
+pen_fun <- function(
+  r_hat_min_k # minimum rhat for k
+  , k # value of k
+  , data # raw data matrix
+) {
+  k_tmp <- k_max
+  # first 5% of obs
+  d_beg_5 <- data %>% filter(week %in% 1:ceiling(quantile(1:nrow(data), .05))) %>% select(-ID, -week)
+  # last 5% of obs
+  d_las_5 <- data %>% filter(week %in% (floor(quantile(1:nrow(data), .95))):nrow(data)) %>% select(-ID, -week)
+  # calculate the trace of the covariance matrices of first and last 5%
+  v_beg <- tr(cov(d_beg_5))
+  v_las <- tr(cov(d_las_5))
+  v_max <- ifelse(v_beg > v_max, v_beg, v_las)
+  
+  pen_df <- tibble(c = 1, k = k_max)
+  counter <- 1
+  while (k_tmp > 0) {
+    pen_k <- pen_df$c[counter]*((v_max*(k_max + 1))/nrow(data))*(1 + log((nrow(data)/(k_max+1))))
+  }
+}
