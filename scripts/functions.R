@@ -24,6 +24,7 @@ KCP <- function(
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
   , perm_path = NULL# path to save the permuted data sets and moving window correlations to
   , vhat_path = NULL# path to save the v hat values, if desired
+  , out_path = NULL # path to save the output, if desired
   , ID = NULL       # option participant ID if saving data to an output file
 ){
   # make sure required packages are loaded
@@ -33,6 +34,11 @@ KCP <- function(
   # make sure data are sorted by time
   data <- unclass(data) %>% as.data.frame()
   data <- data[order(data[,timevar], na.last = NA, decreasing = F), ]
+  
+  # penalties for later
+  v_max <- v_max_fun(data)
+  penalty <- penalty_fun(kmax, v_max, nrow(data))
+  
   start <- (1 + window %/% 2) # e.g. if the window was 10, the start will be 5
   end <- (nrow(data) - window %/% 2) # e.g. window = 10 and nrow = 56, end will be 51
   
@@ -121,10 +127,6 @@ KCP <- function(
   ) %>%
     filter((tau_p_min_1+2) < tau_p) # last obs of current phase must greater than last obs of previous phase
   
-  # v_hats_perm <- v_hats %>% mutate(scrap = 1) %>% 
-  #   arrange(k, comb) %>%
-  #   full_join(tibble(sample = 1:iter, scrap = 1))
-  
   v_hats_comb <- v_hats_comb %>%
     mutate(rn = 1:n(), # saving this row number for matching stuff later
            R = list(raw_mw_r %>% select(i,r) %>% group_by(i) %>% nest())) %>% # add in the moving window correlations
@@ -140,7 +142,7 @@ KCP <- function(
   }
   
   # Calculate the number of cores
-  no_cores <- detectCores() - 1
+  no_cores <- detectCores() - 2
   
   # Initiate cluster
   cl <- makeCluster(no_cores)
@@ -148,7 +150,7 @@ KCP <- function(
   # import global env variables for parallel computing
   clusterExport(cl, varlist = c("data", "v_hats_comb", "perm_all_fun", "mw_cor_fun",
                                 "r_vec_fun", "v_hat_fun", "v_hat_par_fun", "gauss_kernal_fun", "jitter_fun",
-                                "window", "start", "end"), envir=environment())
+                                "window", "start", "end", "kmax", "penalty_fun", "Mode"), envir=environment())
   clusterCall(cl, function() library(tidyverse))
   # run the variance function on raw data
   v_hats_comb$v_hat <- parallel::parLapply(cl, v_hats_comb$data, v_hat_par_fun)
@@ -156,9 +158,7 @@ KCP <- function(
   # run the variance function on permuted sets
   v_hats_comb_perm <- tibble(sample = 1:iter)
   v_hats_comb_perm$v_hat <- parLapply(cl, 1:iter,
-                                      function(x) perm_all_fun(data, window, start, end))
-  # v_hats_comb_perm$v_hat <- lapply(1:iter,
-  #           function(x) perm_all_fun(data, window, start, end))
+                  function(x) perm_all_fun(data, window, start, end, kmax))
   
   stopCluster(cl) # end parallel computing session
   
@@ -177,6 +177,11 @@ KCP <- function(
            mw_cor = map(v_hat, ~.$mw_cor)) %>%
     select(-v_hat)
   if(!is.null(perm_path)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
+  
+  # pen_perm <- v_hats_comb_perm %>%
+  #   mutate(penalty = map(v_hat, ~.$penalty)) %>%
+  #   select(sample, penalty) %>%
+  #   unnest(penalty)
   
   # get rid of permuted data sets to save memory
   v_hats_comb_perm <- v_hats_comb_perm %>% 
@@ -198,19 +203,22 @@ KCP <- function(
     select(-scrap) %>%
     arrange(k, comb, sample)
   
-  if(!is.null(vhat_path)){save(v_hats_comb, v_hats_comb_perm, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
-  
+  if(!is.null(vhat_path)){save(v_hats_comb, v_hats_comb_perm, penalty, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
   # calculate the r_hat values (average within-phase variance)
   r_hats <- v_hats_comb %>%
     group_by(k, comb) %>%
     summarize(rhat = mean(v_hat, na.rm = T)) %>%
     ungroup()
   
+  rm(v_hats_comb)
+  
   # calculate the r_hat values (average within-phase variance) for the permutations
   r_hats_perm <- v_hats_comb_perm %>% 
     group_by(sample, k, comb) %>%
     summarize(rhat = mean(v_hat, na.rm = T)) %>%
-    ungroup()
+    ungroup() 
+  
+  rm(v_hats_comb_perm)
   
   # number of change points
   # variance test
@@ -221,27 +229,36 @@ KCP <- function(
   if(v_test < .025){print("V_test: k > 0")} else {print("V_test: No change points")}
   
   # variance drop test
-  v_drop_raw <- r_hats %>% 
+  # find minimized variances for each k
+   r_min <- r_hats %>% 
     group_by(k) %>%
     mutate(mincomb = comb[rhat == min(rhat, na.rm = T)]) %>%
-    filter(comb == mincomb) %>%
+    filter(comb == mincomb) 
+  
+  # find drops between minimized variances for raw data
+  v_drop_raw <- r_min %>% # minimized r_hats
     # summarize(raw_min = min(rhat, na.rm = T)) %>%
     ungroup() %>%
-    mutate(raw_min_1 = lag(rhat),
-           raw_drop = rhat - raw_min_1) %>%
+    mutate(raw_min_1 = lag(rhat), # minimized r_hats for k-1
+           raw_drop = rhat - raw_min_1) %>% # difference in min rhat for k and k-1
     rename(raw_min = rhat)
   
-  v_drop_perm <- r_hats_perm %>%
+  # find minimized variances for each sample and k
+  r_min_perm <- r_hats_perm %>%
     filter(!is.na(sample)) %>%
     group_by(sample, k) %>%
     mutate(mincomb = comb[rhat == min(rhat, na.rm = T)]) %>%
-    filter(comb == mincomb) %>%
+    filter(comb == mincomb)
+  
+  # find drops between minimized variances for raw data
+  v_drop_perm <- r_min_perm %>% # minimized r_hats
     group_by(sample) %>%
-    mutate(min_1 = lag(rhat),
-           drop = rhat - min_1) %>%
+    mutate(min_1 = lag(rhat), # minimized r_hats for k-1
+           drop = rhat - min_1) %>% # difference in min rhat for k and k-1
     ungroup() %>%
     rename(min = rhat)
   
+  # join raw and permuted variance drops
   v_drop <- v_drop_perm %>%
     select(sample, k, min, min_1, drop) %>%
     full_join(v_drop_raw %>% select(-comb, -mincomb)) 
@@ -250,34 +267,75 @@ KCP <- function(
   v_drop_test <- v_drop %>%
     filter(k != 0) %>%
     group_by(sample) %>%
-    summarize(max_drop = max(abs(drop), na.rm = T),
-              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
     ungroup() %>%
-    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter)
+    # proportion of max permuted drops that are greater than raw drops 
+    # (they shouldn't be if there are real changes)
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter) 
   
-  if(any(v_drop$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
+  # print results of the Variance drop test
+  if(any(v_drop_test$p < .025)){print("V_drop: Change Points detected")} else {print("V_drop: No Change Points")}
   
-  k <- NA
-  knots <- NA
+  
+  k <- 0 # empirical k, will be changed if either tests are significant
+  knots <- NA # empirical location of change points, will be changed if k > 0
+  C <- 1 # penalization, will be selected is k > 0
   if(v_drop$p < .025 | v_test$p < .025){
-    tmp <- v_drop_raw %>% filter(abs(raw_drop) == max(abs(raw_drop), na.rm = T))
-    k <- tmp$k
-    knots <- (v_hats %>% filter(k == tmp$k & comb == tmp$comb))$tau_p_min_1 + 1
+    # choosing k, from Cabrieto et al (2018b), Information Sciences paper
+    k_raw <- r_hats %>% # penalize rhat based on k and a constant C
+      # filter(k != 0) %>%
+      # bring in the penalties for all rhats
+      full_join(penalty %>% full_join(crossing(k=0, C=1:500, penalty = 0))) %>%
+      # if k == 0, there is no penalty
+      mutate(penalty = ifelse(is.na(penalty), 0, penalty),
+             raw_khat = rhat + penalty) # penalized averge within-phase variance
+    
+    # choose the penalty using grid search
+    k_choose <- k_raw %>% group_by(C) %>%
+      # find the combination with the minimized khat value for each penalization (C)
+      # as well as the khat value for that combination
+      mutate(min_comb = comb[raw_khat == min(raw_khat, na.rm = T)],
+             min_k = k[raw_khat == min(raw_khat, na.rm = T)]) %>%
+      ungroup() %>%
+      # keep only the minimized khat values
+      filter(comb == min_comb & k == min_k) %>%
+      # get rid of zeros because they are just here to help us choose C
+      # C = first C where k == 0 is chosen - 1
+      filter(k != 0)
   
+    mode_k <- Mode(k_choose$k) # choose k with the most stable mode for k
+    comb_k <- (k_choose %>% filter(k == mode_k) %>% arrange(C))$comb # save the combination that matches
+    
+    C <- min((k_choose %>% filter(k == mode_k))$C) - 1 # penalization
+    k <- mode_k
+    knots <- (v_hats %>% filter(k == mode_k & comb == comb_k))$tau_p_min_1 + 1
   }
   
-  cp <- ifelse((v_test < .025 | any(v_drop$p < .025)), "CP", "NCP")
+  # save change point results in a list
+  cp <- list(
+    cp = ifelse((v_test < .025 | any(v_drop$p < .025)), "CP", "NCP"),
+    knots = knots,
+    k = k,
+    C = C
+    )
   
+  # create list of all results
   out = list(
     v_drop = v_drop
     , v_test = v_test
     , r_hats = r_hats
     , r_hats_perm = r_hats_perm
-    , cp = cp,
-    , knots = knots
-    , k = k
+    , cp = cp
   )
-  return(out)
+  
+  # save the results to file or return as an object
+  if(!is.null(out.path)){
+    save(cp, file = sprintf("%s/results_%s.Rdata", out_path, ID))
+    return(T)
+  } else {
+      return(out)
+    }
 }
 
 ### mw_cor_fun ###
@@ -328,9 +386,12 @@ r_vec_fun <- function(
 # and run mw correlations for each permutation
 # returns a nested data frame
 
-perm_all_fun <- function(data, window, start, end){
+perm_all_fun <- function(data, window, start, end, k_max){
   n <- nrow(data) # number of observations
   s_data <- sample_n(data, n, replace = F) # shuffle the data
+  v_max <- v_max_fun(s_data)
+  # penalty <- penalty_fun(k_max, v_max, nrow(s_data))
+  
   mw_cor <- mw_cor_fun(s_data, window = window) # moving window correlations
   mw_r_nested <- mw_cor %>% select(i, r) %>% group_by(i) %>% nest()
   
@@ -352,7 +413,7 @@ perm_all_fun <- function(data, window, start, end){
   # get the variance of the moving window correlations within a window
   v_hats_comb$v_hat <- lapply(v_hats_comb$data, v_hat_par_fun)
   # return the results
-  return(list(data = s_data, mw_cor = mw_cor, v_hat = v_hats_comb))
+  return(list(data = s_data, mw_cor = mw_cor, v_hat = v_hats_comb, v_max = v_max))
 }
 
 gauss_kernal_fun <- function(
@@ -400,24 +461,39 @@ jitter_fun <- function(df){
   return(df2)
 }
 
-pen_fun <- function(
-  r_hat_min_k # minimum rhat for k
-  , k # value of k
-  , data # raw data matrix
+v_max_fun <- function(
+  data
 ) {
-  k_tmp <- k_max
   # first 5% of obs
-  d_beg_5 <- data %>% filter(week %in% 1:ceiling(quantile(1:nrow(data), .05))) %>% select(-ID, -week)
+  d_beg_5 <- data %>% filter(week %in% 1:ceiling(quantile(1:nrow(data), .05))) %>% select(-week)
   # last 5% of obs
-  d_las_5 <- data %>% filter(week %in% (floor(quantile(1:nrow(data), .95))):nrow(data)) %>% select(-ID, -week)
+  d_las_5 <- data %>% filter(week %in% (floor(quantile(1:nrow(data), .95))):nrow(data)) %>% select(-week)
   # calculate the trace of the covariance matrices of first and last 5%
   v_beg <- tr(cov(d_beg_5))
   v_las <- tr(cov(d_las_5))
   v_max <- ifelse(v_beg > v_max, v_beg, v_las)
-  
-  pen_df <- tibble(c = 1, k = k_max)
-  counter <- 1
-  while (k_tmp > 0) {
-    pen_k <- pen_df$c[counter]*((v_max*(k_max + 1))/nrow(data))*(1 + log((nrow(data)/(k_max+1))))
+}
+
+penalty_fun <- function(
+  k_max
+  , v_max
+  , n
+) {
+  pen_math_fun <- function(C, k, n, v_max){
+    pen_k <- C*((v_max*(k + 1))/n)*(1 + log((n/(k_max+1))))
   }
+  
+  penalties <- crossing(
+    C = 1:500,
+    k = 1:k_max,
+    n = n,
+    v_max = v_max
+  ) %>%
+    mutate(penalty = pmap_dbl(list(C, k, n, v_max), pen_math_fun))
+}
+
+Mode <- function(x) {
+  ux <- unique(x)
+  ux <- ux[!is.na(ux)]
+  ux[which.max(tabulate(match(x, ux)))]
 }

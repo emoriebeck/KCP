@@ -34,7 +34,7 @@ library(tidyverse)
 wd <- "~/Documents/Github/KCP"
 read.path <- "https://github.com/emoriebeck/KCP"
 write.path <- "~/"
-write.path <- wd
+# write.path <- wd
 ```
 
 ## Packages
@@ -98,7 +98,7 @@ KCP_nested <- weekly_wide %>%
   filter(n > 25) %>%
   select(-n) %>%
   arrange(ID, week) %>%
-  filter(ID %in% c("002")) %>%
+  # filter(ID %in% c("002")) %>%
   nest() %>%
   mutate(KCP = map2(data, ID, ~KCP(
     data = .x       # N x P numeric matrix or data frame
@@ -110,6 +110,7 @@ KCP_nested <- weekly_wide %>%
   , rule = "OR"     # should both variance and variance drop tests be required to be significant
   , perm_path = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
   , vhat_path = sprintf("%s/results/vhats", write.path) # path to save the v hat values, if desired
+  , out_path = sprintf("%s/results/out", write.path) # path to save the v hat values, if desired
   , ID = .y  
   )))
 end <- Sys.time()
