@@ -68,7 +68,7 @@ crossing(
 
 
 ### Load the data
-```{r}
+```{r, eval = F}
 # CREATE A COEBOOK
 weekly <- url(sprintf("%s/blob/master/data/Longitudinal_Weekly_1_Year/metaresearch2-corrected-web.sav?raw=true", read.path)) %>%
   haven::read_sav()
@@ -86,20 +86,28 @@ weekly_wide <- weekly_long %>%
   filter(type == "personality") %>%
   spread(key = trait, value = value) %>%
   select(-type)
+
+save(weekly_long, weekly_wide, file = sprintf("%s/data/data.RData", write.path))
 ```
 
 # KCP 
 ```{r}
 source(sprintf('%s/blob/master/scripts/functions.R?raw=true', read.path))
+load(url(sprintf('%s/blob/master/data/data.RData?raw=true', read.path)))
 start <- Sys.time()
+
 KCP_nested <- weekly_wide %>% 
   group_by(ID) %>%
   mutate(n = n()) %>%
   filter(n > 25) %>%
   select(-n) %>%
   arrange(ID, week) %>%
-  # filter(ID %in% c("002")) %>%
-  nest() %>%
+  nest() 
+
+subs <- unique(KCP_nested$ID)
+
+KCP_nested <- KCP_nested %>%  
+  filter(ID %in% subs[1:10]) %>%
   mutate(KCP = map2(data, ID, ~KCP(
     data = .x       # N x P numeric matrix or data frame
   , kmax = 3        # max number of change points to test
