@@ -125,7 +125,10 @@ KCP <- function(
     tau_p = start:end, # last obs of current phase
     tau_p_min_1 = start:end # last obs of previous phase
   ) %>%
-    filter((tau_p_min_1+2) < tau_p) # last obs of current phase must greater than last obs of previous phase
+    filter(tau_p_min_1 != tau_p)%>% # make sure that the last obs the previous window is
+    # before the current window 
+    filter((tau_p_min_1 + 1) != tau_p &
+           (tau_p_min_1 != (tau_p + 1))) # last obs of current phase must greater than last obs of previous phase
   
   v_hats_comb <- v_hats_comb %>%
     mutate(rn = 1:n(), # saving this row number for matching stuff later
@@ -400,8 +403,10 @@ perm_all_fun <- function(data, window, start, end, k_max){
     tau_p = start:end,
     tau_p_min_1 = start:end
   ) %>%
-    filter((tau_p_min_1+2) < tau_p) # make sure that the last obs the previous window is
-  # before the current window
+    filter(tau_p_min_1 != tau_p) %>%# make sure that the last obs the previous window is
+  # before the current window 
+    filter((tau_p_min_1 + 1) != tau_p &
+           (tau_p_min_1 != (tau_p + 1)))
   
   # match the starting observations with the correct windows of correlations
   v_hats_comb <- v_hats_comb %>%
@@ -471,7 +476,7 @@ v_max_fun <- function(
   # calculate the trace of the covariance matrices of first and last 5%
   v_beg <- tr(cov(d_beg_5))
   v_las <- tr(cov(d_las_5))
-  v_max <- ifelse(v_beg > v_max, v_beg, v_las)
+  v_max <- ifelse(v_beg > v_las, v_beg, v_las)
 }
 
 penalty_fun <- function(
