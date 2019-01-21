@@ -358,7 +358,7 @@ KCP <- function(
   
   # save the results to file or return as an object
   if(!is.null(out_path)){
-    save(cp, file = sprintf("%s/results_%s.Rdata", out_path, ID))
+    save(out, file = sprintf("%s/results_%s.Rdata", out_path, ID))
     return(T)
   } else {
       return(out)
