@@ -25,7 +25,12 @@ packages <- c("psych", "parallel", "plyr", "tidyverse")
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 
-if(!("results" %in% list.files())){dir.create("~/results")}
+if(!("results" %in% list.files())){
+  dir.create("~/results")
+  dir.create("~/results/vhats")
+  dir.create("~/results/out")
+  dir.create("~/results/perm_data")
+  }
 
 library(psych)
 library(parallel)
@@ -107,7 +112,7 @@ KCP_nested <- weekly_wide %>%
 subs <- unique(KCP_nested$ID)
 
 KCP_nested <- KCP_nested %>%  
-  filter(ID %in% subs[1:10]) %>%
+  filter(ID %in% subs[3]) %>%
   mutate(KCP = map2(data, ID, ~KCP(
     data = .x       # N x P numeric matrix or data frame
   , kmax = 3        # max number of change points to test
