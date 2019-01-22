@@ -146,7 +146,7 @@ KCP <- function(
   }
   
   # Calculate the number of cores
-  no_cores <- detectCores() - 2
+  no_cores <- detectCores() - 1
   
   # Initiate cluster
   cl <- makeCluster(no_cores)
