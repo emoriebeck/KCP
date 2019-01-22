@@ -27,6 +27,7 @@ KCP <- function(
   , out_path = NULL # path to save the output, if desired
   , ID = NULL       # option participant ID if saving data to an output file
 ){
+  start_time <- Sys.time()
   # make sure required packages are loaded
   if(isNamespaceLoaded("parallel") == F){library(parallel)}
   if(isNamespaceLoaded("plyr") == F){library(plyr)}
@@ -362,7 +363,9 @@ KCP <- function(
     return(T)
   } else {
       return(out)
-    }
+  }
+  end_time <- Sys.time()
+  print(paste("Time elapsed", round(end_time-start_time,2)))
 }
 
 ### mw_cor_fun ###
