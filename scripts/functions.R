@@ -175,13 +175,13 @@ KCP <- function(
     arrange(k, comb)
   
   # extract the permuted data sets and moving window correlations
-  perm_data <- v_hats_comb_perm %>% 
-    mutate(data = map(v_hat, ~.$data),
-           mw_cor = map(v_hat, ~.$mw_cor)) %>%
-    select(-v_hat)
-  if(!is.null(perm_path)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
-  # get rid of permuted data sets to save memory
-  rm(perm_data)
+  # perm_data <- v_hats_comb_perm %>% 
+  #   mutate(data = map(v_hat, ~.$data),
+  #          mw_cor = map(v_hat, ~.$mw_cor)) %>%
+  #   select(-v_hat)
+  # if(!is.null(perm_path)){save(perm_data, file = sprintf("%s/perm_data_%s.Rdata", perm_path, ID))}
+  # # get rid of permuted data sets to save memory
+  # rm(perm_data)
   
   # pen_perm <- v_hats_comb_perm %>%
   #   mutate(penalty = map(v_hat, ~.$penalty)) %>%
@@ -197,12 +197,12 @@ KCP <- function(
     mutate(rhat = map(v_hat, ~.$r_hats)) %>%
     select(-v_hat)
   
-  v_hats_comb_perm <- v_hats_comb_perm %>% 
-    mutate(v_hat = map(v_hat, ~.$v_hat))
+  # v_hats_comb_perm <- v_hats_comb_perm %>% 
+  #   mutate(v_hat = map(v_hat, ~.$v_hat))
   
-  if(!is.null(vhat_path)){save(v_hats_comb, v_hats_comb_perm, penalty, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
+  # if(!is.null(vhat_path)){save(v_hats_comb, v_hats_comb_perm, penalty, file = sprintf("%s/vhats_%s.Rdata", vhat_path, ID))}
   rm(v_hats_comb)
-  rm(v_hats_comb_perm)
+  # rm(v_hats_comb_perm)
   
   # extract the permuted variances and unnest them
   # then join the variances for different phases back with all possible 
@@ -457,11 +457,12 @@ perm_all_fun <- function(data, window, start, end, k_max){
   
   # return the results
   return(list(
-    data = s_data
-    , mw_cor = mw_cor
-    , v_hat = v_hats_comb
-    , v_max = v_max
-    , r_hats = r_hats)
+    r_hats = r_hats
+    # , data = s_data
+    # , mw_cor = mw_cor
+    # , v_hat = v_hats_comb
+    # , v_max = v_max
+  )
     )
 }
 
