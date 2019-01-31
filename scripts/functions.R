@@ -292,7 +292,7 @@ KCP <- function(
     full_join(v_drop_raw %>% select(-comb, -mincomb)) 
   
   # now for each combo of k, match the permutated with the raw drops
-  v_drop_test <- v_drop %>%
+  v_drop_test <- out$v_drop %>%
     filter(k != 0) %>%
     group_by(sample) %>%
     summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
@@ -342,7 +342,7 @@ KCP <- function(
   
   # save change point results in a list
   cp <- list(
-    cp = ifelse((v_test < .025 | any(v_drop$p < .025)), "CP", "NCP"),
+    cp = ifelse((v_test < .025 | v_drop$p < .025), "CP", "NCP"),
     knots = knots,
     k = k,
     C = C
