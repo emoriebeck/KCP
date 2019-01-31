@@ -214,6 +214,8 @@ KCP_nested <- weekly_wide %>%
   mutate(mwr = map(data, mwr_fun)) %>%
   full_join(KCP_nested %>% arrange(ID))
 
+save(KCP_nested, file = sprintf("%s/results/KCP.RData", box.path))
+
 emp_mwr_plot_fun <- function(df, k, knots){
   df <- df %>%
     mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O")),
