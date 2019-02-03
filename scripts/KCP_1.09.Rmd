@@ -63,12 +63,13 @@ codebook <- crossing(
 full_join(
 crossing(
   tmp = "relevents",
-  num = c(paste("0", c(3,4,6,8,9), sep = ""), "10", "11")
+  num = c(paste("0", c(3,4,6,8,9), sep = ""), "10", "11"),
+  week = c(paste("0",1:9, sep = ""), 10:60)
 ) %>%
   mutate(trait = mapvalues(num, unique(num), c("famPassed", "partTrav", "pregnant", 
                             "engaged", "moveIn", "married", "brokeUp")),
          type = "event") %>%
-  unite(item, tmp, num, sep = "")
+  unite(item, tmp, num, week, sep = "")
 )
 ```
 
@@ -82,10 +83,9 @@ weekly <- url(sprintf("%s/blob/master/data/Longitudinal_Weekly_1_Year/metaresear
 weekly_long <- weekly %>%
   select(ID, contains("tipi"), contains("relevents")) %>%
   gather(key = item, value = value, -ID, na.rm = T) %>%
-  full_join(codebook) %>%
+  full_join(codebook) %>% 
   mutate(week = as.numeric(str_remove_all(item, "[a-z]"))) %>%
-  select(-item) %>% 
-  mutate(week = ifelse(type == "event", str_spli))
+  select(-item) %>%
   filter(!is.na(trait))  %>%
   filter(!(type ==  "personality" & value != 0)) %>%
   arrange(ID, trait, type, week) 
@@ -196,6 +196,10 @@ load_fun <- function(sid){
   }
 }
 
+knots_df_fun <- function(knots){
+  knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
+}
+
 files <-  sprintf("%s/results/out", box.path) %>% list.files() %>% 
   str_remove_all(., "[a-z A-Z_.]")
 
@@ -210,10 +214,12 @@ KCP_nested <- KCP_nested %>%
          C = map_dbl(cp, ~.$C),
          k = map_dbl(cp, ~.$k),
          knots = map(cp, ~.$knots),
+         knots = map(knots, knots_df_fun),
          cp = map_chr(cp, ~.$cp),
          v_drop = map(KCP, ~.$v_drop),
          v_test = map(KCP, ~.$v_test)) %>%
   select(-KCP)
+
 ```
 
 ## Figures
@@ -335,8 +341,51 @@ saveGIF(loop.animate(), interval = .25, movie.name="emp_mwr_series.gif", ani.wid
 
 # Events  
 ```{r}
-weekly_long %>% filter(type == "event")
+events_long <- weekly_long %>% filter(type == "event") %>%
+  separate(week, c("scrap", "week"), -2) %>%
+  select(-scrap) 
+
+events_long <- events_long %>% group_by(ID, week, type) %>%
+  summarize(trait = "Any", value = sum(value, na.rm = T),
+            value = ifelse(value >= 1, 1, value)) %>%
+  ungroup() %>%
+  full_join(events_long) %>%
+  mutate(week = as.numeric(week))
 ```
+
+```{r}
+
+
+match_events_fun <- function(sid, week){
+  knots <- (KCP_nested %>% 
+    filter(ID == sid))$knots[[1]]$week
+  range <- seq(week-2, week+2, 1)
+  match <- any(range %in% knots)
+}
+
+event_match <- events_long %>%
+  filter(value == 1 & ID %in% (KCP_nested %>% filter(k > 0))$ID) %>%
+  mutate(match = map2_lgl(ID, week, match_events_fun))
+
+event_match %>% 
+  group_by(trait, match) %>%
+  summarize(n = n()) %>%
+  group_by(trait) %>%
+  mutate(prop = n/sum(n)) %>%
+  full_join(crossing(match = c(T, F), trait = unique(event_match$trait))) %>%
+  filter(trait != "Any") %>%
+  mutate(prop = ifelse(is.na(prop), 0, prop),
+         y = ifelse(match == T & prop != 0, .05, 
+             ifelse(match == T & prop == 0, NA, .95))) %>%
+  ggplot(aes(x = trait, fill = match, y = prop)) +
+  scale_fill_manual(values = c("#312EF9", "#C00003")) +
+  geom_bar(stat = "identity", color = "black") + 
+  geom_text(aes(label = n, y = y), color = "white") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+ggsave(file = sprintf("%s/results/pres_figs/CP_event_num_proportion.png", write.path), width = 5, height =  5)
+```
+
 
 
 # Ancillary Figures for SPSP Presentation  
