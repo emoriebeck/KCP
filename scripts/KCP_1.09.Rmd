@@ -144,6 +144,58 @@ load_fun <- function(sid){
   # return(T)
 }
 
+load_fun <- function(sid){
+  load(sprintf("%s/out/results_%s.RData", "~/Downloads", sid))
+  data <- (KCP_nested %>% filter(ID == sid))$data[[1]] %>% select( -n)
+  v_max <- v_max_fun(data)
+  penalty <- penalty_fun(3, v_max, nrow(data))
+  k <- 0 # empirical k, will be changed if either tests are significant
+  knots <- NA # empirical location of change points, will be changed if k > 0
+  r_hats <- out$r_hats
+  iter <- 500
+  v_drop_test <- out$v_drop %>%
+    filter(k != 0) %>%
+    group_by(sample) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
+    ungroup() %>%
+    # proportion of max permuted drops that are greater than raw drops 
+    # (they shouldn't be if there are real changes)
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter) 
+  v_test <- out$v_test
+  C <- 1 # penalization, will be selected is k > 0
+  if(v_drop_test$p < .025 | v_test < .025){
+    # choosing k, from Cabrieto et al (2018b), Information Sciences paper
+    k_raw <- r_hats %>% # penalize rhat based on k and a constant C
+      # filter(k != 0) %>%
+      # bring in the penalties for all rhats
+      full_join(penalty %>% full_join(crossing(k=0, C=1:500, penalty = 0))) %>%
+      # if k == 0, there is no penalty
+      mutate(penalty = ifelse(is.na(penalty), 0, penalty),
+             raw_khat = rhat + penalty) # penalized averge within-phase variance
+    
+    # choose the penalty using grid search
+    k_choose <- k_raw %>% group_by(C) %>%
+      # find the combination with the minimized khat value for each penalization (C)
+      # as well as the khat value for that combination
+      mutate(min_comb = comb[raw_khat == min(raw_khat, na.rm = T)],
+             min_k = k[raw_khat == min(raw_khat, na.rm = T)]) %>%
+      ungroup() %>%
+      # keep only the minimized khat values
+      filter(comb == min_comb & k == min_k) %>%
+      # get rid of zeros because they are just here to help us choose C
+      # C = first C where k == 0 is chosen - 1
+      filter(k != 0)
+  
+    mode_k <- Mode(k_choose$k) # choose k with the most stable mode for k
+    comb_k <- (k_choose %>% filter(k == mode_k) %>% arrange(C))$comb # save the combination that matches
+    
+    C <- min((k_choose %>% filter(k == mode_k))$C) - 1 # penalization
+    k <- mode_k
+    knots <- (v_hats %>% filter(k == mode_k & comb == comb_k))$tau_p_min_1 + 1
+  }
+}
+
 files <-  sprintf("%s/results/out", box.path) %>% list.files() %>% 
   str_remove_all(., "[a-z A-Z_.]")
 

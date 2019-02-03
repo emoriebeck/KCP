@@ -292,7 +292,7 @@ KCP <- function(
     full_join(v_drop_raw %>% select(-comb, -mincomb)) 
   
   # now for each combo of k, match the permutated with the raw drops
-  v_drop_test <- out$v_drop %>%
+  v_drop_test <- v_drop %>%
     filter(k != 0) %>%
     group_by(sample) %>%
     summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
@@ -498,7 +498,7 @@ v_hat_fun <- function(
   print(paste(tau_p, tau_p_min_1, sep = " "))
   inner <- crossing(inner_l = (tau_p_min_1+1):tau_p,
                     outer_l = (tau_p_min_1+1):tau_p) %>%
-    filter(inner_l != outer_l & inner_l < outer_l) %>%
+    filter(inner_l != outer_l) %>%
     left_join(R %>% dplyr::select(inner_l = i, R_i = data)) %>%
     left_join(R %>% dplyr::select(outer_l = i, R_j = data)) %>%
     mutate(inner = map2_dbl(R_i, R_j, possibly(gauss_kernal_fun, NA_real_)))
