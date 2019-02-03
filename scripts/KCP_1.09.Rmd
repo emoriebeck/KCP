@@ -273,7 +273,6 @@ mwr_fun  <- function(df){
 
 KCP_nested <- weekly_wide %>% 
   group_by(ID) %>%
-  mutate(n = n()) %>%
   filter(ID %in% curr.subs) %>%
   arrange(ID, week) %>%
   nest() %>%
