@@ -39,8 +39,8 @@ library(tidyverse)
 wd <- "~/Documents/Github/KCP"
 read.path <- "https://github.com/emoriebeck/KCP"
 box.path <- "~/Box/network/other projects/KCP"
-write.path <- "~/"
-# write.path <- wd
+# write.path <- "~/"
+write.path <- wd
 ```
 
 ## Packages
@@ -85,7 +85,9 @@ weekly_long <- weekly %>%
   full_join(codebook) %>%
   mutate(week = as.numeric(str_remove_all(item, "[a-z]"))) %>%
   select(-item) %>% 
-  filter(value != 0) %>%
+  mutate(week = ifelse(type == "event", str_spli))
+  filter(!is.na(trait))  %>%
+  filter(!(type ==  "personality" & value != 0)) %>%
   arrange(ID, trait, type, week) 
 
 weekly_wide <- weekly_long %>% 
@@ -135,14 +137,20 @@ print(paste("Time elapsed", round(end-start,2)))
 ```{r}
 load_fun <- function(sid){
   print(sid)
-  load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
+  # load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
+  load(sprintf("%s/out/results_%s.RData", "~/Downloads", sid))
   out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
+  # save(out, file = sprintf("%s/results/small/results_%s.RData", box.path, sid))
+  # return(T)
 }
 
 files <-  sprintf("%s/results/out", box.path) %>% list.files() %>% 
   str_remove_all(., "[a-z A-Z_.]")
 
-KCP_nested <- tibble(ID = files[c(1:68, 70:73,75:77)]) %>%
+files <-  sprintf("%s/out", "~/Downloads") %>% list.files() %>% 
+  str_remove_all(., "[a-z A-Z_.]")
+
+KCP_nested <- tibble(ID = files) %>%
   mutate(KCP = map(ID, load_fun))
 
 KCP_nested <- KCP_nested %>% 
@@ -226,12 +234,12 @@ emp_mwr_plot_fun <- function(df, k, knots){
       mutate(xmin1 = min(df$i), xmax1 = max(df$i), ymin = -1, ymax = 1)
   } else if (k == 1){
     df <- df %>%
-      mutate(xmin1 = 0, xmax1 = knots[1], 
+      mutate(xmin1 = min(df$i), xmax1 = knots[1], 
              xmin2 = knots[1]+1, xmax2 = max(df$i), 
              ymin = -1, ymax = 1)
   } else{
     df <- df %>%
-      mutate(xmin1 = 0, xmax1 = knots[1], 
+      mutate(xmin1 = min(df$i), xmax1 = knots[1], 
              xmin2 = knots[1]+1, xmax2 = knots[2],
              xmin3 = knots[2] + 1, xmax3 = max(df$i), 
              ymin = -1, ymax = 1)
@@ -244,7 +252,6 @@ emp_mwr_plot_fun <- function(df, k, knots){
       fill = "white", alpha = .5, color = "black") +
     # geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
     #   fill = "white", alpha = .5, color = "black") +
-    geom_line() + 
     labs(x = "Week", y = "Moving window Correlation") +
     facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
     theme_classic() + 
@@ -260,9 +267,25 @@ emp_mwr_plot_fun <- function(df, k, knots){
       p  <-  p + 
       geom_rect(aes(xmin = xmin3, xmax = xmax3, ymin = ymin, ymax = ymax),
       fill = "white", alpha = .5, color = "black") 
-    }
+  }
+  p + geom_line() 
 }
+
+library(animation)
+#set up function to loop through the draw.a.plot() function
+loop.animate <- function() {
+  pmap(list(KCP_nested$mwr, KCP_nested$k, KCP_nested$knots),
+       ~print(emp_mwr_plot_fun(..1, ..2, ..3)))
+}
+
+saveGIF(loop.animate(), interval = .25, movie.name="emp_mwr_series.gif", ani.width = 800, ani.height = 500)
 ```
+
+# Events  
+```{r}
+weekly_long %>% filter(type == "event")
+```
+
 
 # Ancillary Figures for SPSP Presentation  
 
@@ -315,7 +338,7 @@ mw_plot_fun <- function(i){
         axis.title = element_text(face = "bold", size = rel(1.2)))
 }
 
-library(animation)
+
 #set up function to loop through the draw.a.plot() function
 loop.animate <- function() {
   lapply(6:50, function(i) {
