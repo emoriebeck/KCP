@@ -263,7 +263,7 @@ load_fun <- function(sid){
     # choose the penalty using grid search
     
     k_choose <- k_raw %>% 
-      left_join(v_hats %>% filter(tau_p == tau_p_min_1 | (tau_p == end & tau_p_min_1 == (end-1))) %>% select(k, comb) %>% mutate(bad = "yes")) %>%
+      left_join(v_hats %>% filter(tau_p == tau_p_min_1 | (tau_p == end & tau_p_min_1 %in% (end-1:2))) %>% select(k, comb) %>% mutate(bad = "yes")) %>%
       group_by(C) %>%
       # find the combination with the minimized khat value for each penalization (C)
       # as well as the khat value for that combination
@@ -369,10 +369,11 @@ KCP_nested <- weekly_wide %>%
   filter(ID %in% curr.subs) %>%
   arrange(ID, week) %>%
   nest() %>%
-  mutate(mwr = map(data, mwr_fun)) %>%
+  mutate(mwr = map(data, mwr_fun),
+         n = map_dbl(data, nrow)) %>%
   full_join(KCP_nested %>% arrange(ID))
 
-save(KCP_nested, file = sprintf("%s/results/KCP.RData", box.path))
+save(KCP_nested, file = sprintf("%s/results/KCP.RData", write.path))
 
 emp_mwr_plot_fun <- function(SID, df, k, knots){
   df <- df %>%
