@@ -87,7 +87,7 @@ weekly_long <- weekly %>%
   mutate(week = as.numeric(str_remove_all(item, "[a-z]"))) %>%
   select(-item) %>%
   filter(!is.na(trait))  %>%
-  filter(!(type ==  "personality" & value != 0)) %>%
+  filter(!(type ==  "personality" & value == 0)) %>%
   arrange(ID, trait, type, week) 
 
 weekly_wide <- weekly_long %>% 
@@ -103,6 +103,16 @@ save(weekly_long, weekly_wide, file = sprintf("%s/data/data.RData", write.path))
 source(sprintf('%s/blob/master/scripts/functions.R?raw=true', read.path))
 load(url(sprintf('%s/blob/master/data/data.RData?raw=true', read.path)))
 start <- Sys.time()
+
+done <- c("146", "307", "308", "309", "311", "312", "313", "314", "315", "316", "317",
+  "318", "319", "320", "322", "323", "324", "325", "326", "327", "328", "259", 
+  "268", "277", "284", "286", "292", "293", "303", "307", "316", "329", "330",
+  "334", "335", "343", "354", "369", "378", "384", "388", "379", "380", "381", 
+  "382", "383", "003", "006", "007", "009", "010", "042", "043", "049", "051", 
+  "057", "063", "066", "070", "082", "085", "087", "088", "100", "105", "112", 
+  "114", "115", "117", "129", "143", "144", "151", "156", "157", "166", "168", 
+  "184", "187", "188", "199", "202", "207", "223", "229", "239", "242", "246",
+  "250", "251", "252")
 
 KCP_nested <- weekly_wide %>% 
   group_by(ID) %>%
@@ -196,8 +206,8 @@ load_fun <- function(sid){
   }
 }
 
-knots_df_fun <- function(knots){
-  knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
+knots_df_fun <- function(cp){
+  cp$knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
 }
 
 files <-  sprintf("%s/results/out", box.path) %>% list.files() %>% 
@@ -211,13 +221,14 @@ KCP_nested <- tibble(ID = files) %>%
 
 KCP_nested <- KCP_nested %>% 
   mutate(cp = map(KCP, ~.$cp),
+         knots = map(cp, knots_df_fun),
          C = map_dbl(cp, ~.$C),
          k = map_dbl(cp, ~.$k),
-         knots = map(cp, ~.$knots),
-         knots = map(knots, knots_df_fun),
-         cp = map_chr(cp, ~.$cp),
+         # knots = map(cp, ~.$knots),
+         cp = map_chr(cp, ~ifelse(!is.character(.$cp), "NCP", .$cp)),
          v_drop = map(KCP, ~.$v_drop),
-         v_test = map(KCP, ~.$v_test)) %>%
+         v_test = map(KCP, ~.$v_test)
+         ) %>%
   select(-KCP)
 
 ```
