@@ -351,7 +351,7 @@ loop.animate <- function() {
        ~print(emp_mwr_plot_fun(..1, ..2, ..3, ..4)))
 }
 
-saveGIF(loop.animate(), interval = .5, movie.name="emp_mwr_series.gif", ani.width = 800, ani.height = 500)
+saveGIF(loop.animate(), interval = .75, movie.name="emp_mwr_series.gif", ani.width = 800, ani.height = 500)
 ```
 
 # Events  
