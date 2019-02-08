@@ -550,3 +550,137 @@ Mode <- function(x) {
   ux <- ux[!is.na(ux)]
   ux[which.max(tabulate(match(x, ux)))]
 }
+
+vhats_setup_fun <- function(kmax, start, end){
+  if(kmax >= 0){
+    # no change points
+    v_hats <- crossing(
+      k = 0, # k = 0 means no change points
+      tau = "i", # i = initial time series point
+      tau_p_min_1 = start, # beginning of previous phase
+      tau_p = end, # last obs of current phase
+      comb = 1 # needed later for keeping things together when there are change points
+    ) 
+  } 
+  if(kmax >= 1){
+    v_hats <- crossing(
+      k = 1, # k = 1 means 1 change point
+      i = start, # setting last phase of initial phase to the median of the first time point
+      a = (start + 1):end # set change point to all possible locations between the beginning and end of the series
+    ) %>%
+      filter(a > i) %>% # last obs of current phase must be larger than last obs of last phase
+      mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
+      gather(key = tau, value = v, -k, -comb) %>% # change to long
+      group_by(comb) %>% # group by phases
+      mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
+      ungroup() %>%
+      mutate(tau_p = ifelse(tau == "a", end, lead - 1), # tau_p is the last obs of current phase
+             tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
+      select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
+      full_join(v_hats) # join with previous v_hat combinations for fewer phases
+  } 
+  if(kmax >= 2){
+    v_hats <-
+      crossing(
+        k = 2,  # k = 2 means 2 change points
+        i = start,# setting last phase of initial phase to the median of the first time point
+        a = (start + 1):(end), # set change point to all possible locations between the beginning and end of the series
+        b = (a + 1):(end) # set change point to all possible locations between a and end of the series
+      ) %>%
+      filter((a > i) & (b > a)) %>% # last obs of current phase must be larger than last obs of last phase
+      mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
+      gather(key = tau, value = v, -k, -comb) %>% # change to long
+      group_by(comb) %>% # group by phases
+      mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
+      ungroup() %>%
+      mutate(tau_p = ifelse(tau == "b", end, lead - 1), # tau_p is the last obs of current phase
+             tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
+      select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
+      full_join(v_hats) # join with previous v_hat combinations for fewer phases
+  } 
+  if (kmax == 3) {
+    v_hats <- 
+      crossing(
+        k = 3, # k = 3 means 3 change points
+        i = start,# setting last phase of initial phase to the median of the first time point
+        a = (start + 1):(end),  # set change point to all possible locations between the beginning and end of the series
+        b = (a + 1):(end), # set change point to all possible locations between a and end of the series
+        c = (b + 1):end  # set change point to all possible locations between b and end of the series
+      ) %>%
+      filter((a > i) & (b > a) & (c > b)) %>% # last obs of current phase must be larger than last obs of last phase
+      mutate(comb = 1:n()) %>% # needed later for keeping things together when there are change points
+      gather(key = tau, value = v, -k, -comb) %>% # change to long
+      group_by(comb) %>% # group by phases
+      mutate(lead = lead(v)) %>% # shift last obs up one row to match with previous phases
+      ungroup() %>%
+      mutate(tau_p = ifelse(tau == "c", end, lead - 1), # tau_p is the last obs of current phase
+             tau_p_min_1 = ifelse(tau == "i", start, v)) %>% # tau_p_min_1 is the last obs of the prvious phase
+      select(k, comb, tau, tau_p, tau_p_min_1) %>% # keep only necessary columns
+      full_join(v_hats) # join with previous v_hat combinations for fewer phases
+  } 
+  if (kmax > 3) {
+    stop ("these are psychological time series and > 3 CP's isn't likely plausible")
+  }
+  return(v_hats)
+}
+
+load_fun <- function(sid){
+  load(sprintf("%s/out/results_%s.RData", "~/Downloads", sid))
+  data <- (KCP_nested %>% filter(ID == sid))$data[[1]] 
+  start <- (1 + 10 %/% 2) # e.g. if the window was 10, the start will be 5
+  end <- (nrow(data) - 10 %/% 2) # e.g. window = 10 and nrow = 56, end will be 51
+  v_max <- v_max_fun(data)
+  penalty <- penalty_fun(3, v_max, nrow(data))
+  v_hats <- vhats_setup_fun(3, start, end)
+  k <- 0 # empirical k, will be changed if either tests are significant
+  knots <- NA # empirical location of change points, will be changed if k > 0
+  r_hats <- out$r_hats
+  iter <- 500
+  v_drop_test <- out$v_drop %>%
+    filter(k != 0) %>%
+    group_by(sample) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
+    ungroup() %>%
+    # proportion of max permuted drops that are greater than raw drops 
+    # (they shouldn't be if there are real changes)
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter) 
+  v_test <- out$v_test
+  C <- 1 # penalization, will be selected is k > 0
+  if(v_drop_test$p < .025 | v_test < .025){
+    # choosing k, from Cabrieto et al (2018b), Information Sciences paper
+    k_raw <- r_hats %>% # penalize rhat based on k and a constant C
+      # filter(k != 0) %>%
+      # bring in the penalties for all rhats
+      full_join(penalty %>% full_join(crossing(k=0, C=1:500, penalty = 0))) %>%
+      # if k == 0, there is no penalty
+      mutate(penalty = ifelse(is.na(penalty), 0, penalty),
+             raw_khat = rhat + penalty) # penalized averge within-phase variance
+    
+    # choose the penalty using grid search
+    
+    k_choose <- k_raw %>% 
+      left_join(v_hats %>% filter(tau_p == tau_p_min_1 | (tau_p == end & tau_p_min_1 %in% (end-1:4))) %>% select(k, comb) %>% mutate(bad = "yes")) %>% 
+      group_by(C) %>%
+      # find the combination with the minimized khat value for each penalization (C)
+      # as well as the khat value for that combination
+      mutate(min_comb = comb[raw_khat == min(raw_khat, na.rm = T)],
+             min_k = k[raw_khat == min(raw_khat, na.rm = T)]) %>%
+      ungroup() %>%
+      # keep only the minimized khat values
+      filter(comb == min_comb & k == min_k) %>%
+      # get rid of zeros because they are just here to help us choose C
+      # C = first C where k == 0 is chosen - 1
+      filter(k != 0)
+    
+    mode_k <- Mode(k_choose$k) # choose k with the most stable mode for k
+    comb_k <- (k_choose %>% filter(k == mode_k) %>% arrange(C))$comb # save the combination that matches
+    
+    C <- min((k_choose %>% filter(k == mode_k))$C) - 1 # penalization
+    k <- mode_k
+    knots <- (v_hats %>% filter(k == mode_k & comb == comb_k & tau != "i"))$tau_p_min_1 -1
+  }
+  out$cp$knots <- knots; out$cp$k <- k; out$cp$C <- C
+  out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
+  return(out)
+}

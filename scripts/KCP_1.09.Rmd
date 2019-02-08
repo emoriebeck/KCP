@@ -95,7 +95,19 @@ weekly_wide <- weekly_long %>%
   spread(key = trait, value = value) %>%
   select(-type)
 
-save(weekly_long, weekly_wide, file = sprintf("%s/data/data.RData", write.path))
+# Events  
+events_long <- weekly_long %>% filter(type == "event") %>%
+  separate(week, c("scrap", "week"), -2) %>%
+  select(-scrap) 
+
+events_long <- events_long %>% group_by(ID, week, type) %>%
+  summarize(trait = "Any", value = sum(value, na.rm = T),
+            value = ifelse(value >= 1, 1, value)) %>%
+  ungroup() %>%
+  full_join(events_long) %>%
+  mutate(week = as.numeric(week))
+
+save(weekly_long, weekly_wide, events_long, file = sprintf("%s/data/data.RData", write.path))
 ```
 
 # KCP 
@@ -379,7 +391,9 @@ emp_mwr_plot_fun <- function(SID, df, k, knots){
   df <- df %>%
     mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O")),
            V2 = mapvalues(V2, Big5, c("E", "A", "C", "N", "O"))) %>%
-    unite(tmp, V1, V2, sep = "-") 
+    unite(tmp, V1, V2, sep = "-") %>%
+    left_join(event_match %>% filter(ID == SID & trait != "Any") %>%
+    select(i = week, event = trait, match))
   if(k == 0){
     df <- df %>%
       mutate(xmin1 = min(df$i), xmax1 = max(df$i), ymin = -1, ymax = 1)
@@ -422,7 +436,7 @@ emp_mwr_plot_fun <- function(SID, df, k, knots){
       geom_rect(aes(xmin = xmin3, xmax = xmax3, ymin = ymin, ymax = ymax),
       fill = "white", alpha = .5, color = "black") 
   }
-  p + geom_line() 
+  p + geom_line() + geom_point(data = df %>% filter(!is.na(event)), color =  "black")
 }
 
 change_dat <- KCP_nested %>% filter(k>0)
@@ -437,19 +451,7 @@ loop.animate <- function() {
 saveGIF(loop.animate(), interval = .75, movie.name="emp_mwr_series.gif", ani.width = 800, ani.height = 500)
 ```
 
-# Events  
-```{r}
-events_long <- weekly_long %>% filter(type == "event") %>%
-  separate(week, c("scrap", "week"), -2) %>%
-  select(-scrap) 
-
-events_long <- events_long %>% group_by(ID, week, type) %>%
-  summarize(trait = "Any", value = sum(value, na.rm = T),
-            value = ifelse(value >= 1, 1, value)) %>%
-  ungroup() %>%
-  full_join(events_long) %>%
-  mutate(week = as.numeric(week))
-```
+# Matching Events
 
 ```{r}
 
@@ -489,6 +491,18 @@ event_match %>%
 ggsave(file = sprintf("%s/results/pres_figs/CP_event_num_proportion.png", write.path), width = 5, height =  5)
 ```
 
+```{r}
+event_match %>%
+  filter(ID == "010" & trait != "Any") %>%
+  View
+
+event_match %>%
+  filter(match == "TRUE" & !trait %in% c("Any", "partTrav")) %>%
+  group_by(ID) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n))
+
+```
 
 
 # Ancillary Figures for SPSP Presentation  
