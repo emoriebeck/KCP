@@ -646,6 +646,7 @@ load_fun <- function(sid){
     # (they shouldn't be if there are real changes)
     summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter) 
   v_test <- out$v_test
+  out$v_drop_test <- v_drop_test
   C <- 1 # penalization, will be selected is k > 0
   if(v_drop_test$p < .025 | v_test < .025){
     # choosing k, from Cabrieto et al (2018b), Information Sciences paper

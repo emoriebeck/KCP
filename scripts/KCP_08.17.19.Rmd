@@ -1,0 +1,973 @@
+---
+title: "Detecting Idiographic Personality Change"
+author: "Emorie D Beck"
+institution: "Washington University in St. Louis"
+date: "`r Sys.setlocale('LC_TIME', 'C'); format(Sys.time(), '%d\\\\. %B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: show
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, error = F)
+```
+
+# Workspace
+```{r}
+packages <- c("psych", "parallel", "plyr", "tidyverse")
+new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+if(!("results" %in% list.files())){
+  dir.create("~/results")
+  dir.create("~/results/vhats")
+  dir.create("~/results/out")
+  dir.create("~/results/perm_data")
+  }
+
+read.path <- "https://github.com/emoriebeck/KCP"
+# write.path <- "~/"
+write.path <- wd
+```
+
+## Packages
+```{r}
+library(psych)
+library(parallel)
+library(animation)
+library(plyr)
+library(tidyverse)
+```
+
+
+## Functions  
+The functions to run the KCP procedure are stored in a separate script, available github at the following link: https://github.com/emoriebeck/KCP/blob/master/scripts/functions.R?raw=true.  The details of these functions will be discussed more below.  
+```{r}
+source(sprintf('%s/blob/master/scripts/functions.R?raw=true', read.path))
+```
+
+
+## Data
+The data come from a longitudinal study collected at the University of Illinois-Urbana Champaigne. 343 individuals in romantic relationships responded to a survey each week for a year in which they answered questions about attachment, personality, life events, and relationship quality/events/experiences. These data were collected by Chris Fraley and are available on his website. https://yourpersonality.net/nsf/  
+
+### Create a codebook  
+The code below creates a codebook that lists the original variable names in the wide format data set for the personality items and seven life event items. The logic of the naming is that the first part includes what broad category (tipi, relevents) the item belong, the second the item itself (e.g. e for Extraversion; events were numbered), and the third the week in the study (01-60). New variable names will be created that let us pull these apart and give them more understandable names.  
+
+```{r}
+Big5 <- c("Extraversion", "Agreeableness", "Conscientiousness", "Neuroticism", "Openness")
+codebook <- crossing(
+  inventory = "tipi",
+  traittmp = c("e", "a", "c", "n", "o"),
+  week = c(paste("0",1:9, sep = ""), 10:60)
+) %>%
+  mutate(trait = mapvalues(traittmp, c("e", "a", "c", "n", "o"), Big5),
+         type = "personality") %>%
+  unite(item, inventory, traittmp, week, sep = "") %>%
+full_join(
+crossing(
+  tmp = "relevents",
+  num = c(paste("0", c(3,4,6,8,9), sep = ""), "10", "11"),
+  week = c(paste("0",1:9, sep = ""), 10:60)
+) %>%
+  mutate(trait = mapvalues(num, unique(num), c("famPassed", "partTrav", "pregnant", 
+                            "engaged", "moveIn", "married", "brokeUp")),
+         type = "event") %>%
+  unite(item, tmp, num, week, sep = "")
+)
+```
+
+
+### Load the data
+Next, we load in teh wide format data, select the items from teh codebook we created, and pull category, item, and week information out of each. We then change  the personality variables to wide while keeping the time variable long (to create time series for each person). We also separately pull out the life event data for later comparison to the statistically "chosen" change points.  
+```{r, eval = F}
+weekly <- url(sprintf("%s/blob/master/data/Longitudinal_Weekly_1_Year/metaresearch2-corrected-web.sav?raw=true", read.path)) %>%
+  haven::read_sav()
+
+# change wide data to long
+weekly_long <- weekly %>%
+  select(ID, contains("tipi"), contains("relevents")) %>%
+  gather(key = item, value = value, -ID, na.rm = T) %>%
+  full_join(codebook) %>% 
+  mutate(week = as.numeric(str_remove_all(item, "[a-z]"))) %>%
+  select(-item) %>%
+  filter(!is.na(trait))  %>%
+  filter(!(type ==  "personality" & value == 0)) %>%
+  arrange(ID, trait, type, week) 
+
+# create time series for all subjects
+weekly_wide <- weekly_long %>% 
+  filter(type == "personality") %>%
+  spread(key = trait, value = value) %>%
+  select(-type)
+
+# Events  
+# pull events info out 
+events_long <- weekly_long %>% filter(type == "event") %>%
+  separate(week, c("scrap", "week"), -2) %>%
+  select(-scrap) 
+# change events to long
+events_long <- events_long %>% group_by(ID, week, type) %>%
+  summarize(trait = "Any", value = sum(value, na.rm = T),
+            value = ifelse(value >= 1, 1, value)) %>%
+  ungroup() %>%
+  full_join(events_long) %>%
+  mutate(week = as.numeric(week))
+
+# save the data for easier loading
+# save(weekly_long, weekly_wide, events_long, file = sprintf("%s/data/data.RData", write.path))
+```
+
+```{r}
+weekly_dem <- haven::read_sav("~/Downloads/metaresearch2-initial-web.sav")
+
+weekly_dem %>% summarise_at(vars(age), lst(mean, sd, min, max), na.rm = T)
+
+weekly_dem %>% group_by(sex) %>% summarize(n = n())
+
+weekly_long %>% filter(type == "personality") %>% select(ID, week) %>% distinct() %>% nrow
+
+weekly_long %>% filter(type == "personality") %>% select(ID, week) %>% distinct() %>%
+  group_by(ID) %>% summarize(n = n()) %>% ungroup() %>% 
+  summarise_at(vars(-ID), lst(mean, sd, min, max), na.rm = T)
+  
+```
+
+
+```{r}
+load(url(sprintf('%s/blob/master/data/data.RData?raw=true', read.path)))
+```
+
+# KCP 
+Before we run the KCP procedure, the code below creates a series of images that helps to explicate what happens in the procedure. 
+
+## The Procedure  
+The procedure is essentially 8 steps: 
+1. Moving Window Correlations.
+2. Gaussian Similarity between all possible phases for different k.  
+3. Calculate average within-phase variance of Gaussian Similarity.
+4. Repeat steps 1 and 2 for 1000 permuted data sets. 
+5. Perform the Variance Test
+6. Perform the Variance Drop Test
+7. Declare significance if either the variance or variance drop tests passes. 
+8. Keep k of minimum penalized average within-phase variance. 
+
+### 0. Time Series Visualization  
+Before beginning, it's useful to visually demonstrate the multivariate time series we'll be working with. Below is the time series for a single example participant.  
+```{r}
+ex_dat <- weekly_wide %>% 
+  filter(ID == "204")
+
+ex_dat_long <- ex_dat %>%
+  gather(key = Trait, value = value, -ID, -week) 
+shrt.bf <- c("E", "A", "C", "N", "O")
+ex_dat_long %>%
+  mutate(xmin = 25, xmax = 35, ymin = 1, ymax = 7) %>%
+  mutate(shrt_trait = mapvalues(Trait, Big5, c("E", "A", "C", "N", "O")),
+         shrt_trait = factor(shrt_trait, levels = shrt.bf)) %>%
+  ggplot(aes(x = week, y = value, color = shrt_trait)) +
+  scale_y_continuous(limits = c(1,7), breaks = seq(1,7,2)) + 
+  scale_x_continuous(limits = c(1,55), breaks = seq(1,55,5)) + 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "khaki1", alpha = .5, color = "white") +
+  geom_line() + 
+  labs(x = "Week", y = "Rating (1-7)") +
+  facet_wrap(~shrt_trait, nrow = 5, strip.position = "right") + 
+  theme_classic() + 
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", angle = 0, size = rel(2)),
+        axis.text = element_text(face = "bold"),
+        axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/time_series_ex_hghlt.png", write.path),
+#        width = 8, height = 5)
+```
+
+```{r}
+mw_plot_fun <- function(i){
+  ex_dat_long %>%
+  mutate(xmin = i-5, xmax = i+4, ymin = 1, ymax = 7) %>%
+  mutate(shrt_trait = mapvalues(Trait, Big5, c("E", "A", "C", "N", "O")),
+         shrt_trait = factor(shrt_trait, levels = shrt.bf)) %>%
+  ggplot(aes(x = week, y = value, color = shrt_trait)) +
+  scale_y_continuous(limits = c(1,7), breaks = seq(1,7,2)) + 
+  scale_x_continuous(limits = c(1,55), breaks = seq(1,55,5)) + 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "khaki1", alpha = .5, color = "white") +
+  geom_line() + 
+  labs(x = "Week", y = "Rating (1-7)") +
+  facet_wrap(~shrt_trait, nrow = 5, strip.position = "right") + 
+  theme_classic() + 
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", angle = 0, size = rel(2)),
+        axis.text = element_text(face = "bold"),
+        axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+
+#set up function to loop through the draw.a.plot() function
+loop.animate <- function() {
+  lapply(6:50, function(i) {
+    print(mw_plot_fun(i))
+    ani.pause()
+  })
+}
+# saveGIF(loop.animate(), interval = .25, movie.name="mw_timeseries.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+```{r, results='hide'}
+ex_dat_long %>%
+  mutate(xmin = 1, xmax = 10, ymin = 1, ymax = 7) %>%
+  mutate(shrt_trait = mapvalues(Trait, Big5, c("E", "A", "C", "N", "O")),
+         shrt_trait = factor(shrt_trait, levels = shrt.bf)) %>%
+  ggplot(aes(x = week, y = value, color = shrt_trait)) +
+  scale_y_continuous(limits = c(1,7), breaks = seq(1,7,2)) + 
+  scale_x_continuous(limits = c(1,55), breaks = seq(1,55,5)) + 
+    # geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+    #   fill = "khaki1", alpha = .5, color = "white") +
+  geom_line() + 
+  labs(x = "Week", y = "Rating (1-7)") +
+  facet_wrap(~shrt_trait, nrow = 5, strip.position = "right") + 
+  theme_classic() + 
+  theme(legend.position = "none",
+        strip.text = element_text(face = "bold", angle = 0, size = rel(2)),
+        axis.text = element_text(face = "bold"),
+        axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/mw_timeseries.png", write.path),
+#        width = 8, height = 5)
+```
+
+
+
+```{r}
+mw_cor <- mw_cor_fun(ex_dat %>% select(-ID, -week), window = 10) %>%
+  mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O")),
+         V2 = mapvalues(V2, Big5, c("E", "A", "C", "N", "O"))) %>%
+  unite(tmp, V1, V2, sep = "-") 
+```
+
+### 1. Moving Window Correlations  
+The first step of the procedure is to calcualte the moving window correlations for each of the time series. Basically, this involves slicing the time series into windows of a certain size, then sliding the window across the time series and taking the correlation among the variables at each window. 
+```{r}
+mw_cor %>%
+  mutate(xmin = 25, xmax = 35, ymin = -1, ymax = 1) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/mwr_series_ex.png", write.path),
+#        width = 8, height = 5)
+
+mw_cor %>%
+  mutate(xmin = 25, xmax = 35, ymin = -1, ymax = 1) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "khaki1", alpha = .5, color = "white") +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/mwr_series_ex_highlighted.png", write.path),
+#        width = 8, height = 5)
+
+mwr_plot_fun <- function(x){
+  mw_cor %>%
+  mutate(xmin = x-1, xmax = x+1, ymin = -1, ymax = 1) %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+      scale_y_continuous(limits = c(-1.1,1.1), breaks = seq(-1,1,1)) +
+      scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+      # geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      #   fill = "khaki1", alpha = .5, color = "white") +
+      geom_line() + 
+      geom_point(data = . %>% filter(i == x), size = 4) +
+      geom_text(data = . %>% filter(i == x), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      labs(x = "Week", y = "Moving window Correlation") +
+      facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+      theme_classic() + 
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+            axis.text = element_text(face = "bold"),
+            axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(6:50, function(i) {
+    print(mwr_plot_fun(i))
+    ani.pause()
+  })
+}
+
+# saveGIF(loop.animate(), interval = .25, movie.name="mwr_series.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+To understand what we're looking for when looking for correlational changes in the time series, we have to introduce the idea of a phase, which is a chunk of the time series that is distinct in some way from the rest of the time series.  
+```{r}
+mw_cor %>%
+  mutate(xmin = 6, xmax = 35, xmin2 = 36, xmax2 = 50,
+           ymin = -1, ymax = 1) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/mwr_phases.png", write.path),
+#        width = 8, height = 5)
+
+phase_k1_fun <- function(tau){
+  start <- min(mw_cor$i); end <- max(mw_cor$i)
+  mw_cor %>%
+  mutate(xmin = start, xmax = tau, xmin2 = tau+1, xmax2 = end,
+           ymin = -1, ymax = 1) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(9:47, function(i) {
+    print(phase_k1_fun(i))
+    ani.pause()
+  })
+}
+
+# saveGIF(loop.animate(), interval = .25, movie.name="mwr_phases.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+### 2. Calculate the Gaussian Similarity between correlations across the time series
+```{r}
+gausssim_plot_fun <- function(x,y){
+  mw_cor %>%
+  mutate(xmin1 = x, xmax1 = x, ymin = -1, ymax = 1,
+         xmin2 = y, xmax2 = y) %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+      scale_y_continuous(limits = c(-1.1,1.1), breaks = seq(-1,1,1)) +
+      scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+      # geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      #   fill = "khaki1", alpha = .5, color = "white") +
+      geom_line() + 
+      geom_point(data = . %>% filter(i == x), size = 4) +
+      geom_point(data = . %>% filter(i == y), size = 4) +
+      geom_text(data = . %>% filter(i == x), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      geom_text(data = . %>% filter(i == y), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      labs(x = "Week", y = "Moving window Correlation") +
+      facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+      theme_classic() + 
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+            axis.text = element_text(face = "bold"),
+            axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(6:8, function(i) {
+    lapply((i+1):50, function(k){
+      print(gausssim_plot_fun(i,k))
+      ani.pause()
+    })
+  })
+}
+
+# saveGIF(loop.animate(), interval = .1, movie.name="gaussim_series.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+### 3. Find the average within-phase variance
+```{r}
+mw_cor %>%
+  mutate(xmin2 = 25, xmax2 = 35, ymin = -1, ymax = 1,
+         xmin1 = 6, xmax1 = 24, xmin3 = 36, xmax3 = 50) %>%
+  ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+      fill = "khaki1", alpha = .5, color = "khaki1") +
+    geom_rect(aes(xmin = xmin1, xmax = xmax1, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = 0, color = "gray") +
+    geom_rect(aes(xmin = xmin3, xmax = xmax3, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = 0, color = "gray") +
+    geom_line() + 
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(sprintf("%s/results/pres_figs/mwr_series_ex_k2.png", write.path),
+#        width = 8, height = 5)
+
+tau_p <- 35
+tau_p_min_1 <- 25
+R <- mw_cor %>% group_by(i) %>% select(-tmp) %>% nest()
+inner <- crossing(inner_l = (tau_p_min_1+1):tau_p,
+                    outer_l = (tau_p_min_1+1):tau_p) %>%
+    filter(inner_l != outer_l & inner_l < outer_l) %>%
+    left_join(R %>% dplyr::select(inner_l = i, R_i = data)) %>%
+    left_join(R %>% dplyr::select(outer_l = i, R_j = data)) %>%
+    mutate(inner = map2_dbl(R_i, R_j, possibly(gauss_kernal_fun, NA_real_)))
+
+gausssim_short_plot_fun <- function(R_i, R_j, G_k){
+  tmp <- tibble(r = .8, tmp = "C-A", i = 48, G = ifelse(G_k < .1, sprintf("%.1e", G_k), sprintf("%.1f", G_k)))
+  mw_cor %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+      scale_y_continuous(limits = c(-1.1,1.1), breaks = seq(-1,1,1)) +
+      scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+      # geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      #   fill = "khaki1", alpha = .5, color = "white") +
+      geom_line() + 
+      geom_point(data = . %>% filter(i == R_i), size = 4) +
+      geom_point(data = . %>% filter(i == R_j), size = 4) +
+      geom_text(data = . %>% filter(i == R_i), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      geom_text(data = . %>% filter(i == R_j), aes(label = round(r, 1), y = ifelse(r > 0, r - .6, r + .6))) +
+      geom_label(data = tmp, aes(label = G), color = "black") + 
+      # annotate("text", x = 55, y = 1, label = round(G_k,1)) + 
+      labs(x = "Week", y = "Moving window Correlation") +
+      facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+      theme_classic() + 
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+            axis.text = element_text(face = "bold"),
+            axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(1:nrow(inner), function(i){
+    print(gausssim_short_plot_fun(inner$inner_l[i], inner$outer_l[i], inner$inner[i]))
+    ani.pause()
+})
+}
+
+# saveGIF(loop.animate(), interval = .1, movie.name="gaussim_series_short.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+
+### 4. Repeat steps 1 and 2 for 1000 permuted data sets. 
+```{r}
+perm <- tibble(sample = 1:50) %>%
+  mutate(perm_data = map(sample, ~sample_n(ex_dat %>% select(-ID, -week), nrow(ex_dat), replace = F)),
+         mw_cor = map(perm_data, ~mw_cor_fun(., window = 10))) 
+
+mw_perm <- perm %>% unnest(mw_cor) %>%
+  mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O")),
+         V2 = mapvalues(V2, Big5, c("E", "A", "C", "N", "O")),
+         sample = as.character(sample)) %>%
+  unite(tmp, V1, V2, sep = "-") 
+
+mw_perm_plot_fun <- function(s){
+  mw_perm %>%
+    filter(as.numeric(sample) <= s) %>%
+    ggplot(aes(x = i, y = r, color = sample)) +
+      scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+      scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+      geom_line() + 
+      labs(x = "Week", y = "Moving window Correlation") +
+      facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+      theme_classic() + 
+      theme(legend.position = "none",
+            strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+            axis.text = element_text(face = "bold"),
+            axis.title = element_text(face = "bold", size = rel(1.2)))
+}
+
+loop.animate <- function() {
+  lapply(1:50, function(i) {
+    print(mw_perm_plot_fun(i))
+    ani.pause()
+  })
+}
+
+# saveGIF(loop.animate(), interval = .25, movie.name="mwr_perm.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+### 5. Conduct the Variance Test  
+The variance test asks whether there is more variance in the correlations in the raw time series than in the permuted, shuffled time series. If so for more than 97.5\% of the permuted samples, that suggests that the correlations change in non-random ways -- that is, show reliable correlational change.  
+
+### 6. Conduct the Variance Drop Test  
+The variance drop test asks whether the drop in variance by adding additional change points in the raw time series is larger than the variance drop in the permuted, shuffled time series. If so for more than 97.5\% of the permuted samples, this suggests that have more than one phase significantly reduces within-phase variance.   
+
+### 7. Declare significance if either the variance or variance drop tests are significant  
+
+If either variance of the single phase raw time series correlations are less than the permutations of the drop in the raw series is larger for the raw time series correlations in at least 97.5\% of samples (for an alpha values of 5\% with a Bonferroni correction), declare significance -- there is at least one change point.  
+
+### 8. Keep k of minimum penalized average within-phase variance.  
+
+To find the number and location of the change points, we use a penalized procedure to select the location. Because the within-phase variance by definition reduces as more phases are added, we penalize larger values of k to reduce Type I error. The number and location of the change points is selected based on minimizing average within-phase variance of the penalized $\hat{R}$ values. 
+
+##  Run the Procedure  
+The code below runs the procedure with 500 permutations, a window size of 10 observations, an alpha level  of .05, and a maximum of 3 change points (4 phases).  
+
+```{r, eval = F}
+start <- Sys.time()
+
+# group and nest the time series by person
+# keep only people who responded to at least 25 surveys (N = 311)
+KCP_nested <- weekly_wide %>% 
+  group_by(ID) %>%
+  mutate(n = n()) %>%
+  filter(n > 25) %>%
+  select(-n) %>%
+  arrange(ID, week) %>%
+  nest() 
+
+# unique list of subjects
+subs <- unique(KCP_nested$ID)
+
+# don't run this unless you have months  of your life to waste
+KCP_nested <- KCP_nested %>%  
+  mutate(KCP = map2(data, ID, ~KCP(
+    data = .x       # N x P numeric matrix or data frame
+  , kmax = 3        # max number of change points to test
+  , window = 10     # the size of the moving window used for correlations
+  , timevar = "week"# name of the time variable for sorting
+  , iter = 500      # number of permutations
+  , alpha = .05     # "significance criterion"
+  , rule = "OR"     # should both variance and variance drop tests be required to be significant
+  , perm_path = sprintf("%s/results/perm_data", write.path) # path to save the permuted data sets and moving window correlations to
+  , vhat_path = sprintf("%s/results/vhats", write.path) # path to save the v hat values, if desired
+  , out_path = sprintf("%s/results/out", write.path) # path to save the v hat values, if desired
+  , ID = .y  
+  )))
+end <- Sys.time()
+print(paste("Time elapsed", round(end-start,2)))
+```
+
+## Load the Results  
+Here, we'll load  in the individual level results. After finding a small bug in my code, the `load_fun()` in the `functions.R` file is going to pull those results and "re-choose" k and the location of the knots. Once we've loaded the results back in, we'll join these back in with the original time series and the moving window correlations for each person. We'll save these results for easier loading later.  
+```{r, eval = F}
+# load_fun <- function(sid){
+#   print(sid)
+#   # load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
+#   load(sprintf("%s/out/results_%s.RData", "~/Downloads", sid))
+#   out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
+#   # save(out, file = sprintf("%s/results/small/results_%s.RData", box.path, sid))
+#   # return(T)
+# }
+
+# short function because I retrospectively realized I should saved the knots differently
+knots_df_fun <- function(cp){
+  cp$knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
+}
+
+files <-  sprintf("%s/blob/master/results/out?raw=true", read.path) %>% list.files() %>% 
+  str_remove_all(., "[a-z A-Z_.]")
+
+KCP_nested <- tibble(ID = files) %>%
+  mutate(KCP = map(ID, load_fun))
+
+KCP_nested <- KCP_nested %>% 
+  mutate(cp = map(KCP, ~.$cp),
+         knots = map(cp, knots_df_fun),
+         C = map_dbl(cp, ~.$C),
+         k = map_dbl(cp, ~.$k),
+         # knots = map(cp, ~.$knots),
+         cp = map_chr(cp, ~ifelse(!is.character(.$cp), "NCP", .$cp)),
+         v_drop = map(KCP, ~.$v_drop),
+         v_test = map(KCP, ~.$v_test)
+         ) %>%
+  select(-KCP)
+
+curr.subs <- KCP_nested$ID
+
+mwr_fun  <- function(df){
+  mw_cor_fun(df %>% select(-week), window = 10)
+}
+
+KCP_nested <- weekly_wide %>% 
+  group_by(ID) %>%
+  filter(ID %in% curr.subs) %>%
+  arrange(ID, week) %>%
+  nest() %>%
+  mutate(mwr = map(data, mwr_fun),
+         n = map_dbl(data, nrow)) %>%
+  full_join(KCP_nested %>% arrange(ID))
+
+# save(KCP_nested, file = sprintf("%s/results/KCP.RData", write.path))
+```
+
+# Tables  
+# Demographic Characteristics for Sample Participants (Table 1)  
+```{r}
+KCP_nested %>% 
+  filter(ID %in% c("109", "202", "087")) %>%
+  select(ID, C, k, knots) %>%
+  full_join(
+  weekly_dem %>%
+    filter(ID %in% c("109", "202", "087")) %>%
+    select(ID, sex, age, reltype, ethnicity) 
+  ) %>%
+  mutate(knots = map_chr(knots, function(x) paste0(x$week, collapse = ", ")),
+         sex = mapvalues(sex, c(0,1), c("Female", "Male"))) %>%
+  mutate_at(vars(reltype, ethnicity), str_to_title) %>%
+  arrange(k) %>%
+  select(ID, sex, age, reltype, ethnicity, k, knots, C) %>%
+  kable(., "html", booktabs = T, escape = F,
+        col.names = c("Participant", "Gender", "Age", "Relationship\nType", "Ethnicity",  "k", "Knot\nLocation", "Penalty (C)")) %>%
+  kable_styling(full_width = F)
+```
+
+## Means and SD's for Sample Participants  
+```{r}
+levs <- paste(rep(c("109", "202", "087"), each = 4), rep(c("mean", "sd", "min", "max"), times = 3), sep = "_")
+
+v_drop_fun <- function(df, iter){
+  (df %>% 
+    filter(k != 0) %>%
+    group_by(sample) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
+    ungroup() %>%
+    # proportion of max permuted drops that are greater than raw drops 
+    # (they shouldn't be if there are real changes)
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter))$p 
+}
+KCP_nested <- KCP_nested %>% mutate(v_drop_test = map2_dbl(v_drop, 1000, v_drop_fun))
+KCP_nested %>%
+  filter(ID %in% c("109", "202", "087")) %>%
+  unnest(data) %>%
+  gather(key = trait, value = value, Agreeableness:Openness, na.rm = T) %>%
+  group_by(ID, trait) %>%
+  summarize_at(vars(value), lst(mean, sd, min, max)) %>%
+  gather(key = est, value = value, mean, sd, min, max) %>%
+  unite(tmp, ID, est) %>%
+  mutate(tmp = factor(tmp, levels = levs)) %>%
+  spread(tmp, value) %>%
+  kable(., "html", digits = 2, booktabs = T,
+col.names = c("trait", rep(c("M", "SD", "Min", "Max"),times = 3)))%>%
+  kable_styling(full_width = F) %>%
+  add_header_above(c(" " =  1, "109" = 4, "202" = 4, "087" = 4))
+```
+
+
+
+# Figures  
+## Helper Functions  
+### Raw Time Series  
+```{r}
+raw_ts_plot_fun <- function(df){
+  df %>%
+    gather(key = Trait, value = value, -week, na.rm = T) %>%
+    mutate(Trait = mapvalues(Trait, Big5, c("E", "A", "C", "N", "O"), warn_missing = F),
+           Trait = factor(Trait, levels = c("E", "A", "C", "N", "O"))) %>%
+    ggplot(aes(x = week, y = value, color = Trait)) +
+      scale_y_continuous(breaks = seq(1,7,2), limits = c(1,7)) +
+      geom_line() +
+      labs(y = "Rating", x = "Week") +
+      facet_grid(Trait~.) +
+      theme_classic() +
+      theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)),
+          plot.title = element_text(face = "bold", hjust = .5, size = rel(1.2)))
+}
+```
+
+### Moving Window Correlation Time Series  
+```{r}
+emp_mwr_plot_fun <- function(df, k, knots){
+  df <- df %>%
+    mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O"), warn_missing = F),
+           V2 = mapvalues(V2, Big5, c("E", "A", "C", "N", "O"), warn_missing = F)) %>%
+    unite(tmp, V1, V2, sep = "-") 
+  if(k == 0){
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = max(df$i), ymin = -1, ymax = 1)
+  } else if (k == 1){
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = knots$week[1], 
+             xmin2 = knots$week[1]+1, xmax2 = max(df$i), 
+             ymin = -1, ymax = 1)
+  } else{
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = knots$week[1], 
+             xmin2 = knots$week[1]+1, xmax2 = knots$week[2],
+             xmin3 = knots$week[2] + 1, xmax3 = max(df$i), 
+             ymin = -1, ymax = 1)
+  }
+  p <- df %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin1, xmax = xmax1, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    # geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+    #   fill = "white", alpha = .5, color = "black") +
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)),
+          plot.title = element_text(face = "bold", hjust = .5, size = rel(1.2)))
+  if(k > 0){
+    p  <-  p + 
+      geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") 
+  } 
+  if (k > 1){
+      p  <-  p + 
+      geom_rect(aes(xmin = xmin3, xmax = xmax3, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") 
+  }
+  p + geom_line()
+}
+```
+
+```{r}
+load(url(sprintf("%s/blob/master/results/KCP.RData?raw=true", read.path)))
+
+KCP_nested <- KCP_nested %>%
+  mutate(raw_ts_plot = map(data, raw_ts_plot_fun),
+         mwr_ts_plot = pmap(list(mwr, k, knots), emp_mwr_plot_fun))
+```
+
+## Participant 109 (No Change Points)  
+
+```{r}
+p109  <- gridExtra::grid.arrange(
+    (KCP_nested %>% filter(ID == "109"))$raw_ts_plot[[1]]
+  , (KCP_nested %>% filter(ID == "109"))$mwr_ts_plot[[1]]
+  , nrow = 1
+)
+ggsave(plot = p109, file = sprintf("%s/results/pres_figs/109_plots.png", wd), width = 10, height = 5)
+```
+
+## Participant 202 (1 Change Point)  
+```{r}
+p202  <- gridExtra::grid.arrange(
+    (KCP_nested %>% filter(ID == "202"))$raw_ts_plot[[1]]
+  , (KCP_nested %>% filter(ID == "202"))$mwr_ts_plot[[1]]
+  , nrow = 1
+)
+ggsave(plot = p202, file = sprintf("%s/results/pres_figs/202_plots.png", wd), width = 10, height = 5)
+```
+
+## Participant 087 (2 Change Points)  
+### Raw Time Series
+```{r}
+p087  <- gridExtra::grid.arrange(
+    (KCP_nested %>% filter(ID == "087"))$raw_ts_plot[[1]]
+  , (KCP_nested %>% filter(ID == "087"))$mwr_ts_plot[[1]]
+  , nrow = 1
+)
+ggsave(plot = p087, file = sprintf("%s/results/pres_figs/087_plots.png", wd), width = 10, height = 5)
+```
+
+
+### Number of Change Points  
+How many change points did people exhibit? Of the 20\% who showed reliable changes, about 15\% of those had 1 change points and 5\% showed 2 change points. None showed three change points.  
+```{r}
+KCP_nested %>%
+  mutate(total_n = n()) %>%
+  group_by(k) %>%
+  mutate(n = n(), perc = n/total_n*100) %>%
+  ggplot(aes(x = k, fill = factor(k))) +
+  scale_fill_manual(values = c("#312EF9", "#C00003", "black")) +
+  geom_bar(position = "dodge") +
+  geom_text(aes(label = sprintf("%.2f%%", perc), y = 7), size = 6, color = "white") +
+  labs(x  =  "Change Point", y = "Frequency") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text = element_text(face = "bold", size = rel(1.2), color = "black"),
+        axis.title = element_text(face = "bold", size = rel(1.2)))
+# ggsave(file = sprintf("%s/results/pres_figs/CP_num_proportion.png", write.path), width = 5, height =  5)
+```
+
+```{r}
+KCP_nested %>%
+  group_by(k) %>% 
+  summarize(N = n())
+```
+
+
+### Matching Events
+Next, we ask whether the observed correlational changes in the time series correspond with the life events those participants experienced. We plot the proportion of observed events that correspond to change points identified by the KCP procedure +/- 2 weeks. There appears to be little overlap.  
+```{r}
+match_events_fun <- function(sid, week){
+  knots <- (KCP_nested %>% 
+    filter(ID == sid))$knots[[1]]$week
+  range <- seq(week-2, week+2, 1)
+  match <- any(range %in% knots)
+}
+
+event_match <- events_long %>%
+  filter(value == 1 & ID %in% (KCP_nested %>% filter(k > 0))$ID) %>%
+  mutate(match = map2_lgl(ID, week, match_events_fun))
+
+event_match %>% 
+  group_by(trait, match) %>%
+  summarize(n = n()) %>%
+  group_by(trait) %>%
+  mutate(prop = n/sum(n)) %>%
+  full_join(crossing(match = c(T, F), trait = unique(event_match$trait))) %>%
+  filter(trait != "Any") %>%
+  mutate(prop = ifelse(is.na(prop), 0, prop),
+         y = ifelse(match == T & prop != 0, .05, 
+             ifelse(match == T & prop == 0, NA, .95))) %>%
+  ggplot(aes(x = trait, fill = match, y = prop)) +
+  scale_fill_manual(values = c("#312EF9", "#C00003")) +
+  geom_bar(stat = "identity", color = "black") + 
+  geom_text(aes(label = n, y = y), color = "white") +
+  labs(y = "Proportion of Observed Event", x = NULL, fill = NULL) + 
+  theme_classic() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(face = "bold", size = rel(1.2), angle = 45, hjust = 1),
+        axis.text.y = element_text(face = "bold", size = rel(1.2)),
+        axis.title = element_text(face = "bold", size = rel(1.2)),
+        legend.text = element_text(face = "bold"))
+# ggsave(file = sprintf("%s/results/pres_figs/CP_event_num_proportion.png", write.path), width = 5, height =  5)
+```
+
+
+### Empirical Phases for Different Subjects
+The code below creates a gif that shows the phases for each subject as chosen by the KCP procedure. It also plots points for weeks when participants experienced life events.  
+```{r}
+emp_mwr_plot_fun <- function(SID, df, k, knots){
+  df <- df %>%
+    mutate(V1 = mapvalues(V1, Big5, c("E", "A", "C", "N", "O")),
+           V2 = mapvalues(V2, Big5, c("E", "A", "C", "N", "O"))) %>%
+    unite(tmp, V1, V2, sep = "-") %>%
+    left_join(event_match %>% filter(ID == SID & trait != "Any") %>%
+    select(i = week, event = trait, match))
+  if(k == 0){
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = max(df$i), ymin = -1, ymax = 1)
+  } else if (k == 1){
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = knots$week[1], 
+             xmin2 = knots$week[1]+1, xmax2 = max(df$i), 
+             ymin = -1, ymax = 1)
+  } else{
+    df <- df %>%
+      mutate(xmin1 = min(df$i), xmax1 = knots$week[1], 
+             xmin2 = knots$week[1]+1, xmax2 = knots$week[2],
+             xmin3 = knots$week[2] + 1, xmax3 = max(df$i), 
+             ymin = -1, ymax = 1)
+  }
+  p <- df %>%
+    ggplot(aes(x = i, y = r, color = tmp)) +
+    scale_y_continuous(limits = c(-1,1), breaks = seq(-1,1,1)) +
+    scale_x_continuous(limits = c(1,55), breaks = c(1,seq(5,55,5))) +
+    geom_rect(aes(xmin = xmin1, xmax = xmax1, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") +
+    # geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+    #   fill = "white", alpha = .5, color = "black") +
+    labs(x = "Week", y = "Moving window Correlation") +
+    facet_wrap(~tmp, ncol = 1, strip.position = "right") + 
+    labs(title = sprintf("Participant %s, k = %s", SID, k)) +
+    theme_classic() + 
+    theme(legend.position = "none",
+          strip.text = element_text(face = "bold", angle = 0, size = rel(1.3)),
+          axis.text = element_text(face = "bold"),
+          axis.title = element_text(face = "bold", size = rel(1.2)),
+          plot.title = element_text(face = "bold", hjust = .5, size = rel(1.2)))
+  if(k > 0){
+    p  <-  p + 
+      geom_rect(aes(xmin = xmin2, xmax = xmax2, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") 
+  } 
+  if (k > 1){
+      p  <-  p + 
+      geom_rect(aes(xmin = xmin3, xmax = xmax3, ymin = ymin, ymax = ymax),
+      fill = "white", alpha = .5, color = "black") 
+  }
+  p + geom_line() + geom_point(data = df %>% filter(!is.na(event)), color =  "black")
+}
+
+change_dat <- KCP_nested %>% filter(k > 0)
+
+library(animation)
+#set up function to loop through the draw.a.plot() function
+loop.animate <- function() {
+  pmap(list(change_dat$ID, change_dat$mwr, change_dat$k, change_dat$knots),
+       function(x, y, z, w){
+         print(emp_mwr_plot_fun(x, y, z, w))
+         ani.pause()
+         })
+}
+
+# saveGIF(loop.animate(), interval = .75, movie.name="emp_mwr_series.gif", ani.width = 800, ani.height = 500)
+saveGIF(loop.animate(), interval = .75, movie.name="emp_mwr_series_NC.gif", ani.width = 800, ani.height = 500)
+```
+
+```{r, fig.show='animate', ffmpeg.format='gif', dev='jpeg', results='hide', interval= .5}
+loop.animate()
+```
+
+```{r}
+event_match %>%
+  filter(ID == "010" & trait != "Any") %>%
+  View
+
+event_match %>%
+  filter(match == "TRUE" & !trait %in% c("Any", "partTrav")) %>%
+  group_by(ID) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n))
+```
+
+
