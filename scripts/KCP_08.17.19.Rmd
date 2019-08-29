@@ -25,16 +25,15 @@ packages <- c("psych", "parallel", "plyr", "tidyverse")
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
 
-if(!("results" %in% list.files())){
-  dir.create("~/results")
-  dir.create("~/results/vhats")
-  dir.create("~/results/out")
-  dir.create("~/results/perm_data")
-  }
+# if(!("results" %in% list.files())){
+#   dir.create("~/results")
+#   dir.create("~/results/vhats")
+#   dir.create("~/results/out")
+#   dir.create("~/results/perm_data")
+#   }
 
 read.path <- "https://github.com/emoriebeck/KCP"
 # write.path <- "~/"
-write.path <- wd
 ```
 
 ## Packages
@@ -42,6 +41,8 @@ write.path <- wd
 library(psych)
 library(parallel)
 library(animation)
+library(knitr)
+library(kableExtra)
 library(plyr)
 library(tidyverse)
 ```
@@ -597,21 +598,22 @@ print(paste("Time elapsed", round(end-start,2)))
 ## Load the Results  
 Here, we'll load  in the individual level results. After finding a small bug in my code, the `load_fun()` in the `functions.R` file is going to pull those results and "re-choose" k and the location of the knots. Once we've loaded the results back in, we'll join these back in with the original time series and the moving window correlations for each person. We'll save these results for easier loading later.  
 ```{r, eval = F}
-# load_fun <- function(sid){
-#   print(sid)
-#   # load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
-#   load(sprintf("%s/out/results_%s.RData", "~/Downloads", sid))
-#   out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
-#   # save(out, file = sprintf("%s/results/small/results_%s.RData", box.path, sid))
-#   # return(T)
-# }
+load_fun <- function(sid){
+  print(sid)
+  # load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
+  load(sprintf("%s/out/results_%s.RData", "~/Box/network/other projects/KCP/results", sid))
+  out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
+  # save(out, file = sprintf("%s/results/small/results_%s.RData", box.path, sid))
+  # return(T)
+}
 
 # short function because I retrospectively realized I should saved the knots differently
 knots_df_fun <- function(cp){
   cp$knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
 }
 
-files <-  sprintf("%s/blob/master/results/out?raw=true", read.path) %>% list.files() %>% 
+files <-  "~/Box/network/other projects/KCP/results/out" %>% list.files() %>% 
+# files <-  sprintf("%s/blob/master/results/out?raw=true", read.path) %>% list.files() %>% 
   str_remove_all(., "[a-z A-Z_.]")
 
 KCP_nested <- tibble(ID = files) %>%
@@ -644,7 +646,7 @@ KCP_nested <- weekly_wide %>%
          n = map_dbl(data, nrow)) %>%
   full_join(KCP_nested %>% arrange(ID))
 
-# save(KCP_nested, file = sprintf("%s/results/KCP.RData", write.path))
+# save(KCP_nested, file = sprintf("%s/results/KCP_08.29.19.RData", write.path))
 ```
 
 # Tables  
@@ -692,10 +694,11 @@ KCP_nested %>%
   summarize_at(vars(value), lst(mean, sd, min, max)) %>%
   gather(key = est, value = value, mean, sd, min, max) %>%
   unite(tmp, ID, est) %>%
-  mutate(tmp = factor(tmp, levels = levs)) %>%
+  mutate(tmp = factor(tmp, levels = levs),
+         trait = factor(trait, levels = Big5)) %>%
   spread(tmp, value) %>%
   kable(., "html", digits = 2, booktabs = T,
-col.names = c("trait", rep(c("M", "SD", "Min", "Max"),times = 3)))%>%
+col.names = c("", rep(c("M", "SD", "Min", "Max"),times = 3)))%>%
   kable_styling(full_width = F) %>%
   add_header_above(c(" " =  1, "109" = 4, "202" = 4, "087" = 4))
 ```
@@ -806,7 +809,7 @@ p202  <- gridExtra::grid.arrange(
 ggsave(plot = p202, file = sprintf("%s/results/pres_figs/202_plots.png", wd), width = 10, height = 5)
 ```
 
-## Participant 087 (2 Change Points)  
+## Participant 087 (2 Change Points)  010 239
 ### Raw Time Series
 ```{r}
 p087  <- gridExtra::grid.arrange(
@@ -938,7 +941,7 @@ emp_mwr_plot_fun <- function(SID, df, k, knots){
   p + geom_line() + geom_point(data = df %>% filter(!is.na(event)), color =  "black")
 }
 
-change_dat <- KCP_nested %>% filter(k > 0)
+change_dat <- KCP_nested %>% filter(k > 0) %>% arrange(k)
 
 library(animation)
 #set up function to loop through the draw.a.plot() function
