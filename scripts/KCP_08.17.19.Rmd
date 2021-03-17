@@ -126,8 +126,8 @@ events_long <- events_long %>% group_by(ID, week, type) %>%
 ```
 
 ```{r}
-weekly_dem <- haven::read_sav("~/Downloads/metaresearch2-initial-web.sav")
-
+weekly_dem <- url(sprintf("%s/blob/master/data/Longitudinal_Weekly_1_Year/metaresearch2-initial-web.sav?raw=true", read.path)) %>%
+  haven::read_sav()
 weekly_dem %>% summarise_at(vars(age), lst(mean, sd, min, max), na.rm = T)
 
 weekly_dem %>% group_by(sex) %>% summarize(n = n())
@@ -598,10 +598,17 @@ print(paste("Time elapsed", round(end-start,2)))
 ## Load the Results  
 Here, we'll load  in the individual level results. After finding a small bug in my code, the `load_fun()` in the `functions.R` file is going to pull those results and "re-choose" k and the location of the knots. Once we've loaded the results back in, we'll join these back in with the original time series and the moving window correlations for each person. We'll save these results for easier loading later.  
 ```{r, eval = F}
+library(httr)
+list_files_github <- function(){
+  req <- GET("https://api.github.com/repos/emoriebeck/KCP/git/trees/master?recursive=1")
+  stop_for_status(req)
+  filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)
+  grep("results/out/", filelist, value = TRUE, fixed = TRUE)
+}
+
 load_fun <- function(sid){
   print(sid)
-  # load(sprintf("%s/results/out/results_%s.RData", box.path, sid))
-  load(sprintf("%s/out/results_%s.RData", "~/Box/network/other projects/KCP/results", sid))
+  load(url(sprintf("%s/blob/master/results/out/results_%s.Rdata?raw=true", read.path, sid)))
   out <- out[which(names(out) %in% c("cp", "v_drop", "v_test"))]
   # save(out, file = sprintf("%s/results/small/results_%s.RData", box.path, sid))
   # return(T)
@@ -612,9 +619,7 @@ knots_df_fun <- function(cp){
   cp$knots %>% data.frame() %>% mutate(knot = 1:n()) %>% setNames(c("week", "knot"))
 }
 
-files <-  "~/Box/network/other projects/KCP/results/out" %>% list.files() %>% 
-# files <-  sprintf("%s/blob/master/results/out?raw=true", read.path) %>% list.files() %>% 
-  str_remove_all(., "[a-z A-Z_.]")
+files <- list_files_github() %>% str_remove_all(., "[a-z A-Z_.//]")
 
 KCP_nested <- tibble(ID = files) %>%
   mutate(KCP = map(ID, load_fun))
@@ -649,6 +654,25 @@ KCP_nested <- weekly_wide %>%
 # save(KCP_nested, file = sprintf("%s/results/KCP_08.29.19.RData", write.path))
 ```
 
+```{r}
+load(url(sprintf("%s/blob/master/results/KCP_08.29.19.RData?raw=true", read.path)))
+
+
+v_drop_fun <- function(df, iter){
+  (df %>% 
+    filter(k != 0) %>%
+    group_by(sample) %>%
+    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
+              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
+    ungroup() %>%
+    # proportion of max permuted drops that are greater than raw drops 
+    # (they shouldn't be if there are real changes)
+    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter))$p 
+}
+
+KCP_nested <- KCP_nested %>% mutate(v_drop_test = map2_dbl(v_drop, 1000, v_drop_fun))
+```
+
 # Tables  
 # Demographic Characteristics for Sample Participants (Table 1)  
 ```{r}
@@ -674,18 +698,6 @@ KCP_nested %>%
 ```{r}
 levs <- paste(rep(c("109", "202", "087"), each = 4), rep(c("mean", "sd", "min", "max"), times = 3), sep = "_")
 
-v_drop_fun <- function(df, iter){
-  (df %>% 
-    filter(k != 0) %>%
-    group_by(sample) %>%
-    summarize(max_drop = max(abs(drop), na.rm = T), # find the max drop across all k's and samples
-              max_raw_drop = max(abs(raw_drop), na.rm = T)) %>% # find the max raw drop across all k's
-    ungroup() %>%
-    # proportion of max permuted drops that are greater than raw drops 
-    # (they shouldn't be if there are real changes)
-    summarize(p = sum(max_drop > max_raw_drop, na.rm = T)/iter))$p 
-}
-KCP_nested <- KCP_nested %>% mutate(v_drop_test = map2_dbl(v_drop, 1000, v_drop_fun))
 KCP_nested %>%
   filter(ID %in% c("109", "202", "087")) %>%
   unnest(data) %>%
@@ -702,8 +714,6 @@ col.names = c("", rep(c("M", "SD", "Min", "Max"),times = 3)))%>%
   kable_styling(full_width = F) %>%
   add_header_above(c(" " =  1, "109" = 4, "202" = 4, "087" = 4))
 ```
-
-
 
 # Figures  
 ## Helper Functions  
@@ -781,11 +791,22 @@ emp_mwr_plot_fun <- function(df, k, knots){
 ```
 
 ```{r}
-load(url(sprintf("%s/blob/master/results/KCP.RData?raw=true", read.path)))
-
 KCP_nested <- KCP_nested %>%
   mutate(raw_ts_plot = map(data, raw_ts_plot_fun),
          mwr_ts_plot = pmap(list(mwr, k, knots), emp_mwr_plot_fun))
+```
+
+```{r}
+save_fun <- function(p, type, sid){
+  ggsave(p
+         , file = sprintf("%s/results/plots/%s/%s_%s_plot.png", write.path, type, sid, type)
+         , width = 7
+         , height = 4)
+}
+
+KCP_nested %>%
+  mutate(pmap(list(raw_ts_plot, "ts", ID), save_fun)
+         , pmap(list(mwr_ts_plot, "mwr", ID), save_fun))
 ```
 
 ## Participant 109 (No Change Points)  
@@ -845,7 +866,6 @@ KCP_nested %>%
   group_by(k) %>% 
   summarize(N = n())
 ```
-
 
 ### Matching Events
 Next, we ask whether the observed correlational changes in the time series correspond with the life events those participants experienced. We plot the proportion of observed events that correspond to change points identified by the KCP procedure +/- 2 weeks. There appears to be little overlap.  
